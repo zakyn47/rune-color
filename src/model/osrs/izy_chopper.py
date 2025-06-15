@@ -38,7 +38,7 @@ class IzyChopper(OSRSBot):
             "run_time", "How long to run (minutes)?", 1, 600
         )
         self.options_builder.add_checkbox_option(
-            "take_breaks", "Take short breaks?", [" "]
+            "take_breaks", "Take breaks?", [" "]
         )
         self.options_builder.add_slider_option("click_interval", "Click interval (secs)?", 1, 20)
         self.options_builder.add_checkbox_option("skip_first_row", "Skip dropping first inventory row?", [" "])
@@ -90,7 +90,7 @@ class IzyChopper(OSRSBot):
         while time.time() - start_time < end_time:
             if self.take_breaks:
                 self.potentially_take_a_break()
-                self.potentially_relog_with_delayed_login(prob=0.01, wait_time=rd.biased_trunc_norm_samp(100, 1000))
+                self.potentially_relog_with_delayed_login(prob=0.001, wait_time=rd.biased_trunc_norm_samp(100, 5000))
             if self.is_inv_full():
                 if self.skip_first_row:
                     self.drop_all_items(skip_slots=[0, 1, 2, 3])
