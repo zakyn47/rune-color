@@ -7,10 +7,10 @@
 ![logo](src/img/ui/splash.png)
 </div>
 
-- RuneDark is a desktop client for managing automation scripts in games.
+- Runecolor is a desktop client for managing automation scripts in games.
 
 # Features
-- Unlike traditional injection or reflection frameworks, RuneDark takes a hands-off approach, leveraging computer vision and optical character recognition for precise and efficient automation.
+- Unlike traditional injection or reflection frameworks, Runecolor takes a hands-off approach, leveraging computer vision and optical character recognition for precise and efficient automation.
 
   - ***Object Detection***: Detects and converts in-game objects into data structures.
   - ***Image Recognition***: Identifies images within images using computer vision.
@@ -33,3 +33,10 @@
 
 # More Info
 - Explore detailed tutorials and guides in the [wiki](src/doc/WIKI.md).
+
+
+
+
+
+
+Based on [runedark-public](https://github.com/cemenenkoff/runedark-public) by [cemenenkoff](https://github.com/cemenenkoff), licensed under the MIT License.
