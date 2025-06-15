@@ -189,9 +189,9 @@ class ScrollableButtonFrame(ctk.CTkScrollableFrame):
 
 
 class App(ctk.CTk):
-    """`App` is the main overall class for the RuneDark application.
+    """`App` is the main overall class for the Runecolor application.
 
-    This class serves as the main entry point for the RuneDark bot automation
+    This class serves as the main entry point for the Runecolor bot automation
     application. It extends the `CTk` class from the `customtkinter` library to create
     a graphical user interface (GUI) for managing and running bots.
 
@@ -207,7 +207,7 @@ class App(ctk.CTk):
     Attributes:
         WIDTH (int): The default width of the main application window.
         HEIGHT (int): The default height of the main application window.
-        DEV_MODE (bool): Determines if RuneDark runs in development mode (shows all
+        DEV_MODE (bool): Determines if Runecolor runs in development mode (shows all
             buttons) or production mode (hides Color Filter and Scraper).
         img_home (ImageTk.PhotoImage): Home icon for the home button in the sidebar.
         color_logo (ImageTk.PhotoImage): Color logo for the bot buttons (loaded only if
@@ -241,9 +241,9 @@ class App(ctk.CTk):
     DEV_MODE = True
 
     def __init__(self, test: bool = False) -> None:
-        """Initialize the RuneDark application.
+        """Initialize the Runecolor application.
 
-        This method sets up RuneDark in an unauthorized state by default, loads cached
+        This method sets up Runecolor in an unauthorized state by default, loads cached
         settings, and initializes the UI (unless in test mode).
 
         If `test` is set to `True`, loading images and building the UI is skipped,
@@ -255,7 +255,7 @@ class App(ctk.CTk):
                 False.
         """
         super().__init__()
-        self.auth = False  # Initialize RuneDark as unauthorized.
+        self.auth = False  # Initialize Runecolor as unauthorized.
         self.subscription_key = settings.get("subscription_key")
         self.username = settings.get("username")
         self.load_cached_settings()  # Load settings from `src/settings.pickle`.
@@ -264,7 +264,7 @@ class App(ctk.CTk):
             self.build_ui()
 
     def build_ui(self) -> None:
-        """Build RuneDark's graphic user interface."""
+        """Build Runecolor's graphic user interface."""
         self.title("Runecolor")
         self.views: dict[str, ctk.CTkFrame] = (
             {}
@@ -304,7 +304,7 @@ class App(ctk.CTk):
         self.grid_columnconfigure(1, weight=1)
 
     def _create_title_view(self) -> None:
-        """Create the default view to display when RuneDark is first launched."""
+        """Create the default view to display when Runecolor is first launched."""
         self.title_view = TitleView(parent=self.frame_right, main=self)
         self.title_view.pack(
             in_=self.frame_right,
@@ -584,11 +584,11 @@ class App(ctk.CTk):
 
     # --- Misc Handlers ---
     def __on_closing(self) -> None:
-        """Handle the event where RuneDark is closed (e.g. Alt + F4 or clicking X.)"""
+        """Handle the event where Runecolor is closed (e.g. Alt + F4 or clicking X.)"""
         self.destroy()
 
     def start(self) -> None:
-        """Handle the event where RuneDark is executed, prompting the GUI to appear."""
+        """Handle the event where Runecolor is executed, prompting the GUI to appear."""
         self.mainloop()
 
     # --- UI-less Test Functions ---

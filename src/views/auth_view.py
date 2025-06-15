@@ -63,15 +63,13 @@ class AuthView(ctk.CTkFrame):
 
     def _create_auth_info_text(self) -> None:
         """Create the instructional text for the Auth utility."""
-        self.auth_info = ctk.CTkLabel(
-            self,
-            text=("Submit your RuneDark subscription key to authenticate your client."),
-            font=fnt.body_large_font(),
-            justify="left",
-            height=50,
-            wraplength=400,
+        self.lbl_key = ctk.CTkLabel(
+            master=self,
+            text=("Submit your Runecolor subscription key to authenticate your client."),
+            font=fnt.body_med_font(),
+            anchor="w",
         )
-        self.auth_info.grid(row=1, column=0, sticky="ew", padx=0, pady=10)
+        self.lbl_key.grid(row=1, column=0, sticky="ew", padx=0, pady=10)
 
     def _create_subscription_key_entry_field(self) -> None:
         """Create the subscription key text field."""
@@ -134,7 +132,7 @@ class AuthView(ctk.CTkFrame):
         if count > 0:
             msg = (
                 "Subscription key cached. Your subscription key will be pre-loaded the "
-                " next time RuneDark starts. Restart RuneDark to apply this change."
+                " next time Runecolor starts. Restart Runecolor to apply this change."
                 f"\nWindow will close automatically in {count} seconds."
             )
             self.__update_log(msg, overwrite=True)
@@ -198,14 +196,14 @@ class AuthView(ctk.CTkFrame):
         thread.start()
 
     def _submit_and_authenticate(self, subscription_key: str, **kwargs) -> bool:
-        """Submit a RuneDark subscription key for authentication.
+        """Submit a Runecolor subscription key for authentication.
 
         Notable Kwargs:
             notify_callback (Callable): Callback function to notify the user. Defaults
                 to `print`.
 
         Args:
-            subscription_key (str): RuneDark subscription key.
+            subscription_key (str): Runecolor subscription key.
 
         Returns:
             bool: True if successfully authenticated, False otherwise.

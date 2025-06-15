@@ -7,6 +7,8 @@
 </div>
 
 - Runecolor is a desktop client for managing automation scripts in oldschool runescape.
+- Built on top of [OS-Bot-COLOR](https://github.com/kelltom/OS-Bot-COLOR) and [runedark](https://github.com/cemenenkoff/runedark-public)
+- Kinda playground for me to learn programming
 
 # Features
 - Unlike traditional injection or reflection frameworks, Runecolor takes a hands-off approach, leveraging computer vision and optical character recognition for precise and efficient automation.

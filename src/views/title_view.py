@@ -28,7 +28,7 @@ BOT_ROW = 6
 
 
 class TitleView(ctk.CTkFrame):
-    """`TitleView` is the first view the user sees when RuneDark starts up."""
+    """`TitleView` is the first view the user sees when Runecolor starts up."""
 
     def __init__(self, parent: ctk.CTkFrame, main: ctk.CTk) -> None:
         """Initialize a `TitleView`, the first view the user sees upon startup.
@@ -65,7 +65,7 @@ class TitleView(ctk.CTkFrame):
         self.grid_columnconfigure(2, weight=1)
 
     def _create_main_splash(self) -> None:
-        """Load the main RuneDark logo to be displayed on the title view."""
+        """Load the main Runecolor logo to be displayed on the title view."""
         self.corner_icon_path = PATH_UI / "logo-corner.ico"
         self.logo = ImageTk.PhotoImage(
             Image.open(PATH_UI / "splash.png"),
@@ -123,9 +123,9 @@ class TitleView(ctk.CTkFrame):
         )
 
     def _create_auth_button(self) -> None:
-        """Create a button to enter RuneDark auth information.
+        """Create a button to enter Runecolor auth information.
 
-        In the future, authentication information will be a combination of RuneDark
+        In the future, authentication information will be a combination of Runecolor
         username and an active subscription key.
         """
         self.auth_logo = ImageTk.PhotoImage(
@@ -294,7 +294,7 @@ class TitleView(ctk.CTkFrame):
 
     def __on_website_clicked(self) -> None:
         """Open a link to a website (e.g. wiki, source) upon clicking the button."""
-        wb.open_new_tab("https://github.com/cemenenkoff/runedark-public")
+        wb.open_new_tab("https://github.com/zakyn47/runecolor")
 
     def __on_settings_clicked(self) -> None:
         """Open Settings as a popup after the associated button is clicked."""

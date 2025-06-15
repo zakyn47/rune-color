@@ -3,8 +3,8 @@
 *.exe
 
 # Custom Packaging
-rune_dark.dist/
-rune_dark.build/
+runecolor.dist/
+runecolor.build/
 
 # Ignore temporary files.
 src/images/temp/*

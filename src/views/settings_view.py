@@ -40,7 +40,7 @@ class SettingsView(ctk.CTkFrame):
         self._create_keybind_frame()
         self._create_username_title()
         self._create_username_frame()
-        self._create_restart_instructions()
+        self._create_restart_text()
         self._create_save_button()
 
     # --- Settings View UI Creation Steps ---
@@ -138,16 +138,13 @@ class SettingsView(ctk.CTkFrame):
         )
         self.lbl_username_title.grid(row=2, column=0, columnspan=1, sticky="nw")
 
-    def _create_restart_instructions(self) -> None:
-        """Create instructional text about restarting RuneDark to apply changes."""
+    def _create_restart_text(self) -> None:
+        """Create instructional text about restarting Runecolor to apply changes."""
         self.lbl_restart = ctk.CTkLabel(
             master=self,
-            width=564,
-            text="  Restart RuneDark after saving to apply changes.\n",
-            font=fnt.heading_font(),
-            anchor="center",
-            justify="left",
-            fg_color="#333333",
+            text="  Restart Runecolor after saving to apply changes.\n",
+            font=fnt.body_med_font(),
+            anchor="w",
         )
         self.lbl_restart.grid(row=4, column=0, columnspan=1, sticky="nw")
 

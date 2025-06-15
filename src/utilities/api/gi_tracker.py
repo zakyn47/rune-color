@@ -53,7 +53,7 @@ class GITracker:
     """
 
     def __init__(
-        self, username: str = "", group_name: str = "RuneDark", verbose: bool = False
+        self, username: str = "", group_name: str = "Runecolor", verbose: bool = False
     ) -> None:
         """Spin up a server to handle requests from the Group Ironmen Tracker plug-in.
 
@@ -61,7 +61,7 @@ class GITracker:
             username (str, optional): The group member's username for referencing
                 cached data, if available. Defaults to "".
             group_name (str, optional): The case-sensitive group name as configured on
-                groupiron.men. Defaults to "RuneDark".
+                groupiron.men. Defaults to "Runecolor".
             verbose (bool, optional): If True, the Flask server prints to the console
                 after each request. Defaults to False.
         """
