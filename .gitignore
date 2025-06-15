@@ -175,3 +175,7 @@ cython_debug/
 
 # Photoshop files
 *.psd
+
+
+# misc
+.vscode/
