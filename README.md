@@ -2,12 +2,11 @@
 
 ![Platform: Windows](https://img.shields.io/badge/platform-windows-blue)
 ![Python Version](https://img.shields.io/badge/python-3.10.9-blue)
-![Code Style](https://img.shields.io/badge/code%20style-black-000000)
 
 ![logo](src/img/ui/splash.png)
 </div>
 
-- Runecolor is a desktop client for managing automation scripts in games.
+- Runecolor is a desktop client for managing automation scripts in oldschool runescape.
 
 # Features
 - Unlike traditional injection or reflection frameworks, Runecolor takes a hands-off approach, leveraging computer vision and optical character recognition for precise and efficient automation.
@@ -23,20 +22,12 @@
 3. Open an IDE (e.g. [VS Code](https://code.visualstudio.com/)).
 4. Clone this repository.
 5. Set up a virtual environment.
-   1. Ensure [`virtualenv`](https://virtualenv.pypa.io/en/latest/) is installed: `pip install virtualenv`
-   2. Create a virtual environment: `virtualenv venv --python=python3.10.9`
-   3. Activate the newly-created virtual environment: `source venv/Scripts/activate`
+   1. Create virtual environment `py -3.10.9 -m venv venv`
+   3. Activate virtual environment: `venv/Scripts/activate`
    4. Install dependencies: `pip install -r requirements.txt`
 6. Run: `python src/rune_dark.py`
 
-❌ If you are getting `ModuleNotFound` errors, *restart* your IDE for the newly-installed modules to be recognized.
-
-# More Info
-- Explore detailed tutorials and guides in the [wiki](src/doc/WIKI.md).
 
 
-
-
-
-
+#
 Based on [runedark-public](https://github.com/cemenenkoff/runedark-public) by [cemenenkoff](https://github.com/cemenenkoff), licensed under the MIT License.
