@@ -3,8 +3,14 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pynput.keyboard as keyboard
+import platformdirs
 
-SETTINGS_PATH = Path(__file__).parents[1].joinpath("settings.pickle")
+# Define the application name for the AppData directory
+APP_NAME = "Runecolor"
+
+# Get the user data directory using platformdirs
+USER_DATA_DIR = Path(platformdirs.user_data_dir(appname=APP_NAME))
+SETTINGS_PATH = USER_DATA_DIR / "settings.pickle"
 
 
 def load_settings_file() -> Dict[str, Any]:
@@ -28,6 +34,8 @@ def set(key: str, value: Any) -> None:
         key (str): The key set a value for within `settings.pickle`.
         value (Any): The value to set for the given key.
     """
+    # Ensure the directory exists before writing the file
+    USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
     try:
         data = load_settings_file()
     except FileNotFoundError:
