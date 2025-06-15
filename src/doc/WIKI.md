@@ -117,7 +117,7 @@
 
 <!-- TOC --><a name="4-packaging"></a>
 # 4. Packaging
-- Compiling builds (i.e. compiling `src/rune_dark.py` into an executable) can be done with these approaches:
+- Compiling builds (i.e. compiling `src/runecolor.py` into an executable) can be done with these approaches:
   - [Pyinstaller](https://customtkinter.tomschimansky.com/documentation/packaging)
     - This method is not secure, as source code and assets are stored in temp files during execution.
     - Using the [`auto-py-to-exe`](https://pypi.org/project/auto-py-to-exe/) GUI makes this process easier.

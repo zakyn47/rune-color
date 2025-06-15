@@ -5,6 +5,7 @@
 # Custom Packaging
 runecolor.dist/
 runecolor.build/
+runecolor.onefile-build
 
 # Ignore temporary files.
 src/images/temp/*
