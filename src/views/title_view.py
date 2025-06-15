@@ -1,11 +1,15 @@
 import webbrowser as wb
 from pathlib import Path
 from typing import List
+import threading
+import time
+import requests
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from utilities import settings
+from utilities.update_checker import UpdateChecker
 from views.auth_view import AuthView
 from views.color_filter_view import ColorFilterView
 from views.fonts import fonts as fnt
@@ -50,6 +54,7 @@ class TitleView(ctk.CTkFrame):
         self._create_cached_settings_text()
         self._create_auth_button()
         self._create_website_button()
+        self._create_update_button()
         self._create_settings_button()
         if main.DEV_MODE:
             self._create_scraper_button()
@@ -58,11 +63,14 @@ class TitleView(ctk.CTkFrame):
     # --- Main `TitleView` Creation Steps ---
     def _setup_grid(self) -> None:
         """Configure the title view as a grid for easy button placement."""
-        self.grid_rowconfigure(0, weight=1)  # Main Splash
-        self.grid_rowconfigure(1, weight=1)  # Welcome Text
-        self.grid_columnconfigure(0, weight=1)  # Buttons
-        self.grid_columnconfigure(1, weight=1)
-        self.grid_columnconfigure(2, weight=1)
+        self.grid_rowconfigure(0, weight=1)  # Logo
+        self.grid_rowconfigure(1, weight=0)  # Splash text
+        self.grid_rowconfigure(2, weight=0)  # Cached settings
+        self.grid_rowconfigure(3, weight=0)  # Auth button
+        self.grid_rowconfigure(4, weight=0)  # Scraper/Color Filter (DEV_MODE)
+        self.grid_rowconfigure(5, weight=0)  # Main action buttons
+        for i in range(3):
+            self.grid_columnconfigure(i, weight=1)
 
     def _create_main_splash(self) -> None:
         """Load the main Runecolor logo to be displayed on the title view."""
@@ -122,6 +130,101 @@ class TitleView(ctk.CTkFrame):
             row=2, column=0, columnspan=1, padx=PADX, pady=(0, 10), sticky="nswe"
         )
 
+    def _create_update_button(self) -> None:
+        """Create a button to check for updates."""
+        self.update_logo = ImageTk.PhotoImage(
+            Image.open(PATH_UI / "update.png").resize((IMG_SIZE, IMG_SIZE)),
+            Image.LANCZOS,
+        )
+        self.btn_update = ctk.CTkButton(
+            master=self,
+            text="Update Runecolor",
+            font=fnt.body_large_font(),
+            image=self.update_logo,
+            width=BTN_WIDTH,
+            height=BTN_HEIGHT,
+            hover_color=COLOR_HOVER,
+            corner_radius=CORNER_RADIUS,
+            fg_color=DEFAULT_GRAY,
+            compound="left",
+            command=self.__on_update_clicked,
+            state="disabled",
+        )
+        self.btn_update.grid(row=5, column=1, padx=PADX, pady=(0, 0), sticky="sew")
+        self.btns.append(self.btn_update)
+
+    def __on_update_clicked(self) -> None:
+        """Check for updates and download if available."""
+        update_checker = UpdateChecker()
+        has_update, latest_version, download_url = update_checker.check_for_updates()
+
+        if has_update and latest_version and download_url:
+            # Create a popup window to confirm the update
+            window = ctk.CTkToplevel(master=self)
+            window.title("Update Available")
+            self.center_popup(self.winfo_toplevel(), window, width=400, height=300)
+            window.attributes("-topmost", True)
+
+            # Add message
+            msg = f"A new version ({latest_version}) is available!\nWould you like to download it?"
+            label = ctk.CTkLabel(
+                window,
+                text=msg,
+                font=fnt.body_large_font(),
+                wraplength=350,
+            )
+            label.pack(pady=20)
+
+            # Add download button
+            progress_bar = ctk.CTkProgressBar(window, width=300)
+            progress_bar.pack(pady=10)
+            progress_bar.set(0)
+
+            speed_label = ctk.CTkLabel(window, text="Speed: 0 KB/s")
+            speed_label.pack(pady=5)
+
+            def download():
+                save_path = "new_release.exe"  # or your desired path
+                start_download_thread(download_url, save_path, progress_bar, speed_label, window)
+
+            download_btn = ctk.CTkButton(
+                window,
+                text="Download Update",
+                command=download,
+                font=fnt.body_large_font(),
+            )
+            download_btn.pack(pady=10)
+
+            # Add cancel button
+            cancel_btn = ctk.CTkButton(
+                window,
+                text="Cancel",
+                command=window.destroy,
+                font=fnt.body_large_font(),
+            )
+            cancel_btn.pack(pady=10)
+        else:
+            # Show "No updates available" message
+            window = ctk.CTkToplevel(master=self)
+            self.center_popup(self.winfo_toplevel(), window, width=400, height=200)
+            window.attributes("-topmost", True)
+            window.title("No Updates")
+
+            label = ctk.CTkLabel(
+                window,
+                text="You are running the latest version!",
+                font=fnt.body_large_font(),
+            )
+            label.pack(pady=20)
+
+            ok_btn = ctk.CTkButton(
+                window,
+                text="OK",
+                command=window.destroy,
+                font=fnt.body_large_font(),
+            )
+            ok_btn.pack(pady=10)
+
     def _create_auth_button(self) -> None:
         """Create a button to enter Runecolor auth information.
 
@@ -145,7 +248,8 @@ class TitleView(ctk.CTkFrame):
             compound="left",
             command=self.__on_auth_clicked,
         )
-        self.btn_auth.grid(row=3, column=1, padx=PADX, pady=(0, 0), sticky="sew")
+        self.btn_auth.grid(row=3, column=1, padx=PADX, pady=(10, 10), sticky="ew", columnspan=1)
+        self.btns.append(self.btn_auth)
 
     def _create_website_button(self) -> None:
         """Create a button to prompt a website pop-up in a default browser."""
@@ -167,7 +271,7 @@ class TitleView(ctk.CTkFrame):
             command=self.__on_website_clicked,
             state="disabled",
         )
-        self.btn_website.grid(row=3, column=2, padx=PADX, pady=(0, 0), sticky="sew")
+        self.btn_website.grid(row=5, column=2, padx=PADX, pady=(0, 0), sticky="sew")
         self.btns.append(self.btn_website)
 
     def _create_settings_button(self) -> None:
@@ -190,7 +294,7 @@ class TitleView(ctk.CTkFrame):
             command=self.__on_settings_clicked,
             state="disabled",
         )
-        self.btn_settings.grid(row=3, column=0, padx=PADX, pady=PADY, sticky="ew")
+        self.btn_settings.grid(row=5, column=0, padx=PADX, pady=PADY, sticky="ew")
         self.btns.append(self.btn_settings)
 
     def _create_scraper_button(self) -> None:
@@ -213,7 +317,7 @@ class TitleView(ctk.CTkFrame):
             command=self.__on_scraper_clicked,
             state="disabled",
         )
-        self.btn_sprite_scraper.grid(row=2, column=1, padx=PADX, pady=PADY, sticky="ew")
+        self.btn_sprite_scraper.grid(row=4, column=1, padx=PADX, pady=PADY, sticky="ew")
         self.btns.append(self.btn_sprite_scraper)
 
     def _create_color_filter_button(self) -> None:
@@ -236,7 +340,7 @@ class TitleView(ctk.CTkFrame):
             command=self.__on_color_filter_clicked,
             state="disabled",
         )
-        self.btn_color_filter.grid(row=2, column=2, padx=PADX, pady=PADY, sticky="ew")
+        self.btn_color_filter.grid(row=4, column=2, padx=PADX, pady=PADY, sticky="ew")
         self.btns.append(self.btn_color_filter)
 
     # --- Utility Functions ---
@@ -337,3 +441,52 @@ class TitleView(ctk.CTkFrame):
         window.title("Color Filter")
         view = ColorFilterView(parent=window)
         view.pack(side="top", fill="both", expand=True, padx=0, pady=0)
+
+    def center_popup(self, parent, popup, width=400, height=200):
+        parent.update_idletasks()  # Ensure geometry info is up-to-date
+        x = parent.winfo_rootx()
+        y = parent.winfo_rooty()
+        parent_width = parent.winfo_width()
+        parent_height = parent.winfo_height()
+
+        # Calculate position for the popup to be centered
+        pos_x = x + (parent_width // 2) - (width // 2)
+        pos_y = y + (parent_height // 2) - (height // 2)
+        popup.geometry(f"{width}x{height}+{pos_x}+{pos_y}")
+
+
+def download_with_progress(url, save_path, progress_bar, speed_label, window):
+    response = requests.get(url, stream=True)
+    total = int(response.headers.get('content-length', 0))
+    downloaded = 0
+    chunk_size = 8192
+    start_time = time.time()
+    last_time = start_time
+    last_downloaded = 0
+
+    with open(save_path, 'wb') as f:
+        for chunk in response.iter_content(chunk_size=chunk_size):
+            if chunk:
+                f.write(chunk)
+                downloaded += len(chunk)
+                progress = downloaded / total
+                progress_bar.set(progress)
+                # Calculate speed
+                now = time.time()
+                elapsed = now - last_time
+                if elapsed > 0.5:
+                    speed = (downloaded - last_downloaded) / elapsed / 1024  # KB/s
+                    speed_label.configure(text=f"Speed: {speed:.1f} KB/s")
+                    last_time = now
+                    last_downloaded = downloaded
+                window.update_idletasks()
+    speed_label.configure(text="Download complete!")
+
+
+def start_download_thread(url, save_path, progress_bar, speed_label, window):
+    thread = threading.Thread(
+        target=download_with_progress,
+        args=(url, save_path, progress_bar, speed_label, window),
+        daemon=True
+    )
+    thread.start()
