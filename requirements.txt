@@ -108,6 +108,8 @@ nodeenv==1.9.1
     # via
     #   -r requirements.in
     #   pre-commit
+nuitka==2.7.7
+    # via -r requirements.in
 numpy==2.1.2
     # via
     #   -r requirements.in
@@ -121,6 +123,10 @@ numpy==2.1.2
     #   tifffile
 opencv-python==4.10.0.84
     # via -r requirements.in
+ordered-set==4.1.0
+    # via
+    #   -r requirements.in
+    #   nuitka
 packaging==24.1
     # via
     #   -r requirements.in
@@ -277,6 +283,10 @@ xlib==0.21
     # via
     #   -r requirements.in
     #   pyclick
+zstandard==0.23.0
+    # via
+    #   -r requirements.in
+    #   nuitka
 
 # The following packages are considered to be unsafe in a requirements file:
 # pip
