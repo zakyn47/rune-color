@@ -1239,6 +1239,7 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         """
         if verbose:
             self.log_msg("Dropping items...")
+        pag.keyDown("shift", _pause=False)  # Hold shift to drop.
         for slot in slots:
             self.mouse.move_to(
                 self.win.inventory_slots[slot].random_point(),
@@ -1248,9 +1249,8 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
                 offsetBoundaryX=40,
                 tween=pytweening.easeOutBack,
             )
-            pag.keyDown("shift", _pause=False)  # Hold shift to drop.
             self.mouse.click()
-        pag.keyUp("shift", _pause=False)  # Release shift to stop dropping.
+        pag.keyUp("shift", _pause=False)  # Release shift after dropping
 
     def drop_all_items(self, skip_rows: int = 0, skip_slots: List[int] = None) -> None:
         """Individually left-click drop all items in the inventory to drop them.
@@ -1272,6 +1272,7 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         if skip_rows > 0:
             row_skip = list(range(skip_rows * 4))
             skip_slots = np.unique(row_skip + skip_slots)
+        pag.keyDown("shift", _pause=False)  # Hold shift to drop.
         for i, slot in enumerate(self.win.inventory_slots):
             if i in skip_slots:
                 continue
@@ -1283,9 +1284,8 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
                 offsetBoundaryX=40,
                 tween=pytweening.easeInOutQuad,
             )
-            pag.keyDown("shift", _pause=False)
             self.mouse.click()
-        pag.keyUp("shift", _pause=False)
+        pag.keyUp("shift", _pause=False) # Release shift after
 
     # --- General Utilities ---
     def sleep_while_not_idle(self) -> None:

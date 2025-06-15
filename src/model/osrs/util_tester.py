@@ -59,11 +59,11 @@ class OSRSUtilTester(OSRSBot):
                 # f"Is our inventory empty? {self.is_inventory_empty()}\n"
                 # f"Number of empty inventory slots: {self.get_num_empty_inv_slots()}\n"
                 # f"Is slot 28 full? {self.is_inv_slot_28_full()}\n"
-                f"Is there at least one empty slot? {self.is_inv_not_full()}\n"
-                f"OCR-based world point: {self.get_world_point()}\n"
-                f"OCR-based chunk ID: {self.get_region_id()}\n"
-                f"OCR-based chunk ID: {self.get_chunk_id()}\n"
-                f"compass angle: {self.get_compass_angle()}\n"
+                # f"Is there at least one empty slot? {self.is_inv_not_full()}\n"
+                # f"OCR-based world point: {self.get_world_point()}\n"
+                # f"OCR-based chunk ID: {self.get_region_id()}\n"
+                # f"OCR-based chunk ID: {self.get_chunk_id()}\n"
+                # f"compass angle: {self.get_compass_angle()}\n"
                 # f"username: {api_g.get_quests_summary()}\n"
                 # f"Combat open? {self.is_control_panel_tab_open('combat_options')}\n"
                 # f"Skills open? {self.is_control_panel_tab_open('skills')}\n"
@@ -95,13 +95,6 @@ class OSRSUtilTester(OSRSBot):
                 f"Price emeralds? {self.get_price(1605)} gp\n"
                 f"Price emerald bracelets? {self.get_price(11076)} gp\n"
             )
-            self.move_mouse_randomly()
-            self.sleep(1, 2)
-            self.move_mouse_randomly()
-            self.sleep(1, 2)
-            self.move_mouse_randomly()
-            self.sleep(1, 2)
-            self.move_mouse_randomly()
             # self.win._export_all_regions()
             self.log_msg(msg)
             # time.sleep(0.1)
