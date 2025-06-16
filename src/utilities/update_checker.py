@@ -1,8 +1,7 @@
 import json
 import os
 import sys
-import tempfile
-import webbrowser
+import platformdirs
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -63,34 +62,3 @@ class UpdateChecker:
         except Exception as e:
             print(f"Error checking for updates: {e}")
             return False, None, None
-
-    def download_update(self, download_url: str) -> bool:
-        """Download the latest update.
-
-        Args:
-            download_url (str): The URL to download the update from.
-
-        Returns:
-            bool: Whether the download was successful.
-        """
-        try:
-            # Create a temporary directory for the download
-            with tempfile.TemporaryDirectory() as temp_dir:
-                # Download the file
-                response = requests.get(download_url, stream=True)
-                response.raise_for_status()
-
-                # Save to temporary file
-                temp_file = Path(temp_dir) / "runecolor_update.exe"
-                with open(temp_file, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        if chunk:
-                            f.write(chunk)
-
-                # Open the download in the default browser
-                webbrowser.open(download_url)
-                return True
-
-        except Exception as e:
-            print(f"Error downloading update: {e}")
-            return False

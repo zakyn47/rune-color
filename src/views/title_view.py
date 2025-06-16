@@ -4,6 +4,7 @@ from typing import List
 import threading
 import time
 import requests
+import platformdirs
 
 import customtkinter as ctk
 from PIL import Image, ImageTk
@@ -184,7 +185,8 @@ class TitleView(ctk.CTkFrame):
             speed_label.pack(pady=5)
 
             def download():
-                save_path = "new_release.exe"  # or your desired path
+                """start download update"""
+                save_path = str(Path(platformdirs.user_desktop_dir()) / f"Runecolor{latest_version}.exe")
                 start_download_thread(download_url, save_path, progress_bar, speed_label, window)
 
             download_btn = ctk.CTkButton(
@@ -443,6 +445,13 @@ class TitleView(ctk.CTkFrame):
         view.pack(side="top", fill="both", expand=True, padx=0, pady=0)
 
     def center_popup(self, parent, popup, width=400, height=200):
+        """Center a popup window relative to its parent.
+        Args:
+            parent (ctk.CTkFrame): The parent frame to center the popup relative to.
+            popup (ctk.CTkToplevel): The popup window to center.
+            width (int): Width of the popup window.
+            height (int): Height of the popup window.
+        """
         parent.update_idletasks()  # Ensure geometry info is up-to-date
         x = parent.winfo_rootx()
         y = parent.winfo_rooty()
@@ -456,37 +465,52 @@ class TitleView(ctk.CTkFrame):
 
 
 def download_with_progress(url, save_path, progress_bar, speed_label, window):
-    response = requests.get(url, stream=True)
-    total = int(response.headers.get('content-length', 0))
-    downloaded = 0
-    chunk_size = 8192
-    start_time = time.time()
-    last_time = start_time
-    last_downloaded = 0
+    """Download a file with a progress bar and speed label.
+    Args:
+        url (str): The URL of the file to download.
+        save_path (str): The path where the downloaded file will be saved.
+        progress_bar (ctk.CTkProgressBar): The progress bar widget to update.
+        speed_label (ctk.CTkLabel): The label to display download speed.
+        window (ctk.CTkToplevel): The parent window for the progress bar and label.
+    """
+    try:
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get("content-length", 0))
+        if total_size == 0:
+            raise ValueError("Failed to retrieve content length.")
 
-    with open(save_path, 'wb') as f:
-        for chunk in response.iter_content(chunk_size=chunk_size):
-            if chunk:
-                f.write(chunk)
-                downloaded += len(chunk)
-                progress = downloaded / total
-                progress_bar.set(progress)
-                # Calculate speed
-                now = time.time()
-                elapsed = now - last_time
-                if elapsed > 0.5:
-                    speed = (downloaded - last_downloaded) / elapsed / 1024  # KB/s
-                    speed_label.configure(text=f"Speed: {speed:.1f} KB/s")
-                    last_time = now
-                    last_downloaded = downloaded
-                window.update_idletasks()
-    speed_label.configure(text="Download complete!")
+        with open(save_path, "wb") as file:
+            downloaded_size = 0
+            start_time = time.time()
 
+            for data in response.iter_content(chunk_size=4096):
+                file.write(data)
+                downloaded_size += len(data)
+
+                # Update progress bar
+                progress_bar.set(downloaded_size / total_size)
+                elapsed_time = time.time() - start_time
+                speed = downloaded_size / (1024 * elapsed_time) if elapsed_time > 0 else 0
+                speed_label.configure(text=f"Speed: {speed:.2f} KB/s")
+
+            # Download complete
+            progress_bar.set(1.0)
+            speed_label.configure(text="Download complete!")
+            print(f"File downloaded to {save_path}")
+
+    except Exception as e:
+        print(f"Error during download: {e}")
 
 def start_download_thread(url, save_path, progress_bar, speed_label, window):
-    thread = threading.Thread(
+    """Start a download in a separate thread to avoid blocking the UI.
+    Args:
+        url (str): The URL of the file to download.
+        save_path (str): The path where the downloaded file will be saved.
+        progress_bar (ctk.CTkProgressBar): The progress bar widget to update.
+        speed_label (ctk.CTkLabel): The label to display download speed.
+        window (ctk.CTkToplevel): The parent window for the progress bar and label.
+    """
+    download_thread = threading.Thread(
         target=download_with_progress,
-        args=(url, save_path, progress_bar, speed_label, window),
-        daemon=True
-    )
-    thread.start()
+        args=(url, save_path, progress_bar, speed_label, window))
+    download_thread.start()
