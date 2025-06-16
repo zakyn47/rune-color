@@ -32,4 +32,8 @@
 
 
 #
-Based on [runedark-public](https://github.com/cemenenkoff/runedark-public) by [cemenenkoff](https://github.com/cemenenkoff), licensed under the MIT License.
+#
+Based on:
+- [runedark-public](https://github.com/cemenenkoff/runedark-public) by [cemenenkoff](https://github.com/cemenenkoff)
+- [OS-Bot-COLOR](https://github.com/kelltom/OS-Bot-COLOR) by [kelltom](https://github.com/kelltom)
+- Licensed under the MIT License.
