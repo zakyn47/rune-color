@@ -10,11 +10,12 @@ from utilities.img_search import BOT_IMAGES
 
 class IzyChopper(OSRSBot):
     def __init__(self):
-        bot_title = "izy chopper"
+        bot_title = "multipurposer"
         description = (
         """click nearest cyan-tagged object, then wait for time specified in click_interval, then click it again.
         \n\n
-        Bot designed for early game skilling, such as woodcutting, fishing, mining or combat @ goblins"""
+        multipurpose bot, click cyan tagged objects, wait for time specified in click_interval, then click it again.
+        drops inventory if full, and can take breaks or relog if desired."""
         )
         super().__init__(bot_title=bot_title, description=description)
         self.run_time = 60 * 10  # Measured in minutes
