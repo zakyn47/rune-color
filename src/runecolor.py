@@ -1,11 +1,15 @@
 import importlib
 import tkinter
+import sys
 from pathlib import Path
 from typing import List
 
 import customtkinter as ctk
 import pynput.keyboard as keyboard
 from PIL import Image, ImageTk
+
+sys.path.append(str(Path(__file__).parents[1]))
+from runecolor_version import __version__
 
 import utilities.settings as settings
 from controller.bot_controller import BotController, MockBotController
@@ -351,6 +355,15 @@ class App(ctk.CTk):
         self.frame_left.grid_rowconfigure(
             21, minsize=0
         )  # Bottom padding below Home button.
+
+        # Add version label above Library
+        self.lbl_version = ctk.CTkLabel(
+            master=self.frame_left,
+            text=f"Version: {__version__}",
+            font=fnt.micro_font(),
+            anchor="n",
+        )
+        self.lbl_version.grid(row=0, column=0, pady=(4, 0), padx=PADX)
 
         # Create a title label for `frame_left` and insert it as the 2nd-from-top row.
         self.lbl_frame_left = ctk.CTkLabel(

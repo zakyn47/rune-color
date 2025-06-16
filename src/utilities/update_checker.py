@@ -8,6 +8,9 @@ from typing import Optional, Tuple
 import requests
 from packaging import version
 
+sys.path.append(str(Path(__file__).parents[1]))
+from runecolor_version import __version__
+
 # Constants
 REPO_OWNER = "zakyn47"
 REPO_NAME = "rune-color"
@@ -27,9 +30,7 @@ class UpdateChecker:
         Returns:
             str: The current version string.
         """
-        # For now, we'll use a hardcoded version since we don't have version tracking
-        # In the future, this could be read from a version file or git tags
-        return "0.0.0"
+        return __version__
 
     def check_for_updates(self) -> Tuple[bool, Optional[str], Optional[str]]:
         """Check if there are any updates available.
