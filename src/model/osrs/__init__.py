@@ -6,4 +6,4 @@ from .util_tester import OSRSUtilTester
 from .wanderer import OSRSWanderer
 from .wine_maker import OSRSWineMaker
 from .yew_banker import OSRSYewBanker
-from .izy_chopper import IzyChopper
+from .multi_purposer import MultiPurposer

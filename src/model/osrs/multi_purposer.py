@@ -8,20 +8,19 @@ from utilities.geometry import RuneLiteObject
 from utilities.img_search import BOT_IMAGES
 
 
-class IzyChopper(OSRSBot):
+class MultiPurposer(OSRSBot):
     def __init__(self):
-        bot_title = "multipurposer"
+        bot_title = "Multipurposer"
         description = (
         """click nearest cyan-tagged object, then wait for time specified in click_interval, then click it again.
-        \n\n
-        multipurpose bot, click cyan tagged objects, wait for time specified in click_interval, then click it again.
-        drops inventory if full, and can take breaks or relog if desired."""
+        \n\n- drops inventory if full, and can take breaks or relog if desired."""
         )
         super().__init__(bot_title=bot_title, description=description)
         self.run_time = 60 * 10  # Measured in minutes
         self.take_breaks = False
         self.break_max = 15  # Measured in seconds.
         self.click_interval = 5  # Measured in seconds.
+        self.base_click_interval = 5  # Store the base value for randomization
         self.skip_first_row = False  # If True, we skip the first row when dropping logs.
         self.options_set = True  # If True, we use the above defaults.
         self.relog_time = rd.biased_trunc_norm_samp(
@@ -42,6 +41,7 @@ class IzyChopper(OSRSBot):
             "take_breaks", "Take breaks?", [" "]
         )
         self.options_builder.add_slider_option("click_interval", "Click interval (secs)?", 1, 20)
+        self.options_builder.add_checkbox_option("randomize_interval", "Randomize click interval?", [" "])
         self.options_builder.add_checkbox_option("skip_first_row", "Skip dropping first inventory row?", [" "])
 
     def save_options(self, options: dict) -> None:
@@ -61,10 +61,13 @@ class IzyChopper(OSRSBot):
                 self.take_breaks = options[option] != []
             elif option == "click_interval":
                 self.click_interval = int(options[option])
+                self.base_click_interval = int(options[option])  # Keep base value updated
                 if self.click_interval < 1:
                     self.log_msg("Click interval must be at least 1 second.", overwrite=True)
                     self.options_set = False
                     return
+            elif option == "randomize_interval":
+                self.randomize_interval = options[option] != []
             elif option == "skip_first_row":
                 self.skip_first_row = options[option] != []
             else:
@@ -89,6 +92,10 @@ class IzyChopper(OSRSBot):
         start_time = time.time()
         end_time = int(self.run_time) * 60  # Measured in seconds.
         while time.time() - start_time < end_time:
+            if self.randomize_interval:
+                interval = self.base_click_interval * rd.biased_trunc_norm_samp(0.66, 1.66)
+            else:
+                interval = self.base_click_interval
             if self.take_breaks:
                 self.potentially_take_a_break()
                 self.potentially_relog_with_delayed_login(prob=0.001, wait_time=rd.biased_trunc_norm_samp(100, 5000))
@@ -100,7 +107,7 @@ class IzyChopper(OSRSBot):
             self.mouse_to_nearby_object(second_closest=False)
             self.mouse.click()
             if self.is_active:
-                countdown = int(self.click_interval)
+                countdown = int(interval)
                 while countdown > 0:
                     self.log_msg(f"Waiting: {countdown} seconds...", overwrite=True)
                     time.sleep(1)
