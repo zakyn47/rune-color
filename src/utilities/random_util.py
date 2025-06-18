@@ -202,6 +202,21 @@ def random_chance(prob: float) -> bool:
     return secrets.SystemRandom().random() <= prob
 
 
+def random_choice(choices: list) -> any:
+    """Return a random choice from a list of choices.
+
+    Args:
+        choices (list): A list of choices to select from.
+
+    Returns:
+        any: A randomly selected choice from the list.
+    """
+    if not isinstance(choices, list):
+        raise TypeError("Choices must be a list")
+    if not choices:
+        raise ValueError("Choices list cannot be empty")
+    return secrets.SystemRandom().choice(choices)
+
 if __name__ == "__main__":
     from matplotlib import pyplot as plt
 
