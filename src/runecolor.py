@@ -643,7 +643,7 @@ class App(ctk.CTk):
 
 
 if __name__ == "__main__":
-    # Follow this example to test without the GUI. Press Left-Ctrl to stop.
+    # test without the GUI. Press Left-Ctrl to stop.
     run_without_gui = False
     if run_without_gui:
         from model.osrs.izy_chopper import IzyChopper
