@@ -44,7 +44,7 @@ class HomeView(customtkinter.CTkFrame):
     def _create_welcome_text(self) -> None:
         """Create a label to display the main welcome and introduction."""
         self.txt_welcome = (
-            "Welcome to Runecolor, a color botting framework for games.\n\nRunecolor is"
+            "Welcome to Runecolor, a color botting framework for oldschool runescape.\n\nRunecolor is"
             " designed to develop gaming automation solutions that run while you sleep."
             " Each folder provides a range of script options, many of which include"
             " humanizing features such as:\n\n  - Randomized breaks for varying time"
