@@ -30,6 +30,30 @@ A quick way to confirm the overlay is live: crop the top left of the game view
 and look for `Tile x, y, plane`. If it isn't rendered, don't bother debugging
 walking behavior — nothing position-based can work.
 
+**Nothing may cover the client.** Every reading comes from a screenshot of that
+screen region, so anything drawn on top is what gets measured. A full screen
+Windows overlay is the one that really bites: a Task View or alt-tab switcher
+left open covers the whole screen, and the run fails at startup with `Failed to
+find chatbox` while the client itself looks perfectly fine underneath. If a
+session won't start, check what actually owns those pixels before suspecting the
+bot:
+
+```python
+# What is really on top of the chatbox right now?
+import ctypes
+from ctypes import wintypes
+
+user32 = ctypes.windll.user32
+point = wintypes.POINT(608, 579)  # somewhere inside the chatbox
+name = ctypes.create_unicode_buffer(256)
+user32.GetClassNameW(user32.WindowFromPoint(point), name, 256)
+print(name.value)  # "SunAwtCanvas" is the client; anything else is in the way
+```
+
+`XamlExplorerHostIslandWindow` means Task View is open — dismiss it with
+Win+Tab. Tray popups and notification toasts cause the same class of failure,
+which is a good reason not to turn on notification-heavy plugin options.
+
 ## Running
 
 ```bash
