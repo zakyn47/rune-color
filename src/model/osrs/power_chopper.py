@@ -248,7 +248,7 @@ class OSRSPowerChopper(OSRSBot):
         """
         return len(set(self.get_log_slots()))
 
-    def light_fire(self, log_slot: int, timeout: float = 8) -> bool:
+    def light_fire(self, log_slot: int, timeout: float = 4) -> bool:
         """Use the tinderbox on the given log slot to burn it on a fresh fire.
 
         Note that the two clicks must land in quick succession - the "use" selection
@@ -265,7 +265,9 @@ class OSRSPowerChopper(OSRSBot):
         Args:
             log_slot (int): The inventory slot index of the log to burn.
             timeout (float, optional): Seconds to wait for the log to be consumed
-                before giving up. Defaults to 8.
+                before giving up. Defaults to 4, which is generous next to the half
+                second a successful light actually takes. A light either works almost
+                at once or not at all, so waiting longer only slows down the retry.
 
         Returns:
             bool: True if the log was consumed, False otherwise.
@@ -278,11 +280,15 @@ class OSRSPowerChopper(OSRSBot):
         self.mouse.click()
         end_time = time.time() + timeout
         while time.time() < end_time:
-            self.sleep(0.4, 0.7)
+            # Look before sleeping. A log leaves its slot about half a second after
+            # the clicks land, so waiting first would sit through a burn that has
+            # already happened.
+            #
             # Confirm on a second look before trusting it. A slot can read as empty
             # for a frame while it redraws, and one such read is not a burn.
             if self.is_inv_slot_empty(log_slot) and self.is_inv_slot_empty(log_slot):
                 return True
+            self.sleep(0.15, 0.3)
         return False
 
     def return_to_grove(self, world_point: Tuple[int, int, int]) -> bool:
