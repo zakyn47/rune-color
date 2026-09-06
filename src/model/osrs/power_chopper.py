@@ -1,13 +1,10 @@
 import re
 import time
-from typing import List, Optional
-
-import cv2
-import numpy as np
+from typing import List
 
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
-from utilities.geometry import Point, RuneLiteObject
+from utilities.geometry import RuneLiteObject
 from utilities.img_search import BOT_IMAGES
 
 
@@ -31,6 +28,9 @@ class OSRSPowerChopper(OSRSBot):
         # Inventory slot index of the tinderbox. Assumed fixed since tinderboxes
         # aren't consumed and nothing earlier in the inventory gets added/removed.
         self.tinderbox_slot = 1
+        # Lighting a fire steps our character back a tile, so a run of failed lights
+        # usually means we've backed into a wall and have nowhere left to burn.
+        self.max_failed_lights = 3
         self.logs_dropped = 0  # Number of logs dropped.
         self.logs_burned = 0  # Number of logs burned.
         self.failed_searches = 0  # Number of times we failed to find another tree.
@@ -238,48 +238,57 @@ class OSRSPowerChopper(OSRSBot):
         self.log_msg("Failed to drop logs.")
         return False
 
-    def get_fire_location(self) -> Optional[Point]:
-        """Locate a lit fire within the game view by its orange/red glow.
+    def count_logs(self) -> int:
+        """Count the logs of any type in our character's inventory.
 
         Returns:
-            Optional[Point]: The approximate screen coordinate of the fire, or None
-                if no fire is currently visible (e.g. it has burned out).
+            int: The number of inventory slots filled with logs.
         """
-        img = self.win.game_view.screenshot()
-        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
-        lower = np.array([5, 150, 150])
-        upper = np.array([25, 255, 255])
-        mask = cv2.inRange(hsv, lower, upper)
-        ys, xs = np.where(mask > 0)
-        if len(xs) == 0:
-            return None
-        cx, cy = int(np.mean(xs)), int(np.mean(ys))
-        return Point(self.win.game_view.left + cx, self.win.game_view.top + cy)
+        return len(set(self.get_log_slots()))
 
-    def light_fire(self, log_slot: int) -> bool:
-        """Use the tinderbox on the given log slot to light a new fire.
+    def light_fire(self, log_slot: int, timeout: float = 8) -> bool:
+        """Use the tinderbox on the given log slot to burn it on a fresh fire.
 
         Note that the two clicks must land in quick succession - the "use" selection
         on the tinderbox expires quickly, and if a second or more passes before the
         log is clicked, the combination silently fails to register.
 
+        Success is measured by the log actually leaving our inventory rather than by
+        spotting a fire on screen. Detecting a fire by its color is unreliable, as
+        stray orange pixels scattered around the scene read as a fire even when
+        nothing at all is lit.
+
         Args:
-            log_slot (int): The inventory slot index of the log to use with the
-                tinderbox.
+            log_slot (int): The inventory slot index of the log to burn.
+            timeout (float, optional): Seconds to wait for the log to be consumed
+                before giving up. Defaults to 8.
 
         Returns:
-            bool: True if a fire was found shortly after attempting to light it,
-                False otherwise.
+            bool: True if the log was consumed, False otherwise.
         """
+        num_logs = self.count_logs()
         self.mouse.move_to(self.win.inventory_slots[self.tinderbox_slot].random_point())
         self.mouse.click()
         self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
         self.mouse.click()
-        self.sleep(2, 3)
-        return self.get_fire_location() is not None
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            self.sleep(0.6, 1)
+            if self.count_logs() >= num_logs:
+                continue
+            # Confirm the drop on a second read before trusting it. Counting logs is
+            # a template match that occasionally misses a sprite for a frame (e.g.
+            # while a level-up message redraws the chatbox), and one low read alone
+            # is not a burn.
+            if self.count_logs() < num_logs:
+                return True
+        return False
 
     def burn_all_logs(self) -> bool:
-        """Light a fire and burn all logs in our character's inventory.
+        """Burn every log in our character's inventory, one fire per log.
+
+        Note that logs cannot be added to a fire that is already burning. Using a log
+        on a lit fire does nothing at all, so each log gets its own fresh fire.
 
         Returns:
             bool: True if at least one log was burned, False otherwise.
@@ -290,27 +299,24 @@ class OSRSPowerChopper(OSRSBot):
             return False
         _s = "s" if len(log_slots) > 1 else ""
         self.log_msg(f"Burning {len(log_slots)} log{_s}...")
-        if not self.light_fire(log_slots[0]):
-            self.log_msg("Could not light a fire.")
-            return False
-        burned = 1
-        for slot in log_slots[1:]:
-            fire_point = self.get_fire_location()
-            if fire_point is None:
-                # The fire burned out before we got through all the logs - light a
-                # fresh one on the current log rather than clicking a dead fire.
-                if not self.light_fire(slot):
-                    self.log_msg("Could not relight a fire. Stopping burn.")
-                    break
-                burned += 1
+        failed_lights = 0
+        for slot in log_slots:
+            if self.light_fire(slot):
+                failed_lights = 0
                 continue
-            self.mouse.move_to(self.win.inventory_slots[slot].random_point())
-            self.mouse.click()
-            self.mouse.move_to(fire_point)
-            self.mouse.click()
-            self.sleep(1.5, 2.5)
-            burned += 1
+            failed_lights += 1
+            if failed_lights >= self.max_failed_lights:
+                self.log_msg(
+                    f"Failed to light {failed_lights} fires in a row. Stopping burn."
+                )
+                break
+        # Count what actually left the inventory rather than how many lights we
+        # believe succeeded, so the tally can't drift above the truth.
+        burned = len(log_slots) - self.count_logs()
         self.logs_burned += burned
+        if not burned:
+            self.log_msg("Failed to burn any logs.")
+            return False
         self.log_msg(f"Burned {self.logs_burned} logs so far.", overwrite=True)
         return True
 
