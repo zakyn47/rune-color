@@ -2142,6 +2142,31 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
                 pass
         return x, y, plane
 
+    def get_world_point_reliably(self, attempts: int = 6) -> Tuple[int]:
+        """Get our character's world point, retrying past a transient bad read.
+
+        A single read of the Grid Info overlay is not dependable. A hover tooltip
+        drawn over it, or a redraw caught mid-frame, is enough to make the text
+        unparseable, and `get_world_point` reports that the same way it reports a
+        missing overlay: with the (-1, -1, -1) sentinel. Callers that treat one
+        failed read as "no position available" silently skip whatever they meant to
+        do, so retry before believing it.
+
+        Args:
+            attempts (int, optional): How many reads to try before giving up.
+                Defaults to 6.
+
+        Returns:
+            Tuple[int]: The x-position, y-position, and plane of our character's
+                current position, or (-1, -1, -1) if every attempt failed.
+        """
+        for _ in range(attempts):
+            world_point = self.get_world_point()
+            if world_point[0] != -1:
+                return world_point
+            self.sleep(0.2, 0.4)
+        return -1, -1, -1
+
     def get_chunk_id(self) -> int:
         """Get our character's global chunk ID (i.e. global 8x8 square-title area).
 

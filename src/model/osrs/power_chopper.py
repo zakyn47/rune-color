@@ -334,7 +334,9 @@ class OSRSPowerChopper(OSRSBot):
             return False
         _s = "s" if len(log_slots) > 1 else ""
         self.log_msg(f"Burning {len(log_slots)} log{_s}...")
-        grove = self.get_world_point()  # Where the trees are, to come back to.
+        # Where the trees are, to come back to. Read this properly: one bad
+        # read here means never walking back at all.
+        grove = self.get_world_point_reliably()
         failed_lights = 0
         for slot in log_slots:
             if self.light_fire(slot):
