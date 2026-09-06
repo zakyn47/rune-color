@@ -10,7 +10,7 @@ from utilities.img_search import BOT_IMAGES
 
 class OSRSPowerChopper(OSRSBot):
     def __init__(self):
-        bot_title = "not ready"
+        bot_title = "Power Chopper"
         description = (
             "Chop trees, get a full inventory of logs, drop them, then repeat."
         )
@@ -212,8 +212,7 @@ class OSRSPowerChopper(OSRSBot):
     def drop_all_logs(self) -> bool:
         """Drop all logs from our character's inventory.
 
-        This function relies on the Left Click Drop RuneLite plug-in being configured
-        correctly for the corresponding variety of logs we're chopping.
+        This function relies on the shift-click drop ingame setting being enabled.
 
         Returns:
             bool: True if the logs were successfully dropped, False otherwise.

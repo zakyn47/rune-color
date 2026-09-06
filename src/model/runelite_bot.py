@@ -2114,7 +2114,13 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
             colors=self.cp.bgr.WHITE,
             exclude_chars=[char for char in ocr.PROBLEMATIC_CHARS if char != ","],
         ):
-            x, y, plane = tuple(map(int, text.replace("Tile", "").split(",")))
+            try:
+                x, y, plane = tuple(map(int, text.replace("Tile", "").split(",")))
+            except ValueError:
+                # A hover tooltip (e.g. an NPC name) can transiently overlap the tile
+                # coordinate overlay, producing unparseable text. Treat this the same
+                # as a failed read rather than raising.
+                pass
         return x, y, plane
 
     def get_chunk_id(self) -> int:
