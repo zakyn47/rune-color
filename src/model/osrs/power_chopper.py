@@ -269,9 +269,21 @@ class OSRSPowerChopper(OSRSBot):
                 self.sleep(4, 5)
             if self.is_harvesting:
                 self.num_considerations = 1
+                # `is_harvesting` reads the top chat line, which never expires on its
+                # own (nothing overwrites it once the tree despawns and we go idle).
+                # Without a cap this loop can never exit on a stale positive, so it
+                # never returns control to `main_loop` to check the inventory or
+                # search for a new tree. 90s is comfortably longer than a single
+                # regular tree takes to deplete at low Woodcutting levels.
+                harvest_start = time.time()
+                harvest_timeout = 90
                 while self.is_harvesting:
+                    if time.time() - harvest_start >= harvest_timeout:
+                        self.log_msg("Harvesting timeout reached. Reassessing.")
+                        break
                     prob_move_cursor = 0.10 / (2 * self.num_considerations)
                     self.potentially_mouse_to_second_closest_tree(prob_move_cursor)
                     self.num_considerations += 1
+                    self.sleep(0.6, 1.2)  # Pace to roughly a game tick or two.
                 return True
         return False
