@@ -1,11 +1,12 @@
 import re
 import time
-from typing import List
+from typing import List, Tuple
 
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
-from utilities.geometry import RuneLiteObject
+from utilities.geometry import Point, RuneLiteObject
 from utilities.img_search import BOT_IMAGES
+from utilities.walker import Walker
 
 
 class OSRSPowerChopper(OSRSBot):
@@ -31,6 +32,7 @@ class OSRSPowerChopper(OSRSBot):
         # Lighting a fire steps our character back a tile, so a run of failed lights
         # usually means we've backed into a wall and have nowhere left to burn.
         self.max_failed_lights = 3
+        self.walker = Walker(self, dest_square_side_length=4)
         self.logs_dropped = 0  # Number of logs dropped.
         self.logs_burned = 0  # Number of logs burned.
         self.failed_searches = 0  # Number of times we failed to find another tree.
@@ -284,6 +286,34 @@ class OSRSPowerChopper(OSRSBot):
                 return True
         return False
 
+    def return_to_grove(self, world_point: Tuple[int, int, int]) -> bool:
+        """Walk back to the world point our character started burning from.
+
+        Lighting a fire steps our character back a tile, so burning a full inventory
+        walks it a good distance from the trees it was chopping. Left alone it ends up
+        with no marked trees in the game view at all and nothing left to harvest.
+
+        Args:
+            world_point (Tuple[int, int, int]): The (x, y, plane) world point to walk
+                back to, as returned by `get_world_point`.
+
+        Returns:
+            bool: True if we made it back, False otherwise.
+        """
+        x, y, _ = world_point
+        if x == -1:  # `get_world_point` couldn't read the tile overlay.
+            return False
+        if self.get_world_point()[:2] == (x, y):
+            return True
+        self.log_msg("Returning to the trees...")
+        try:
+            return self.walker.walk_to(Point(x, y))
+        except Exception as exc:
+            # Pathfinding is a network call, and `walk` indexes an empty path when the
+            # API gives nothing back. Losing our way back isn't worth crashing over.
+            self.log_msg(f"Could not walk back to the trees: {exc}")
+            return False
+
     def burn_all_logs(self) -> bool:
         """Burn every log in our character's inventory, one fire per log.
 
@@ -299,8 +329,17 @@ class OSRSPowerChopper(OSRSBot):
             return False
         _s = "s" if len(log_slots) > 1 else ""
         self.log_msg(f"Burning {len(log_slots)} log{_s}...")
+        grove = self.get_world_point()  # Where the trees are, to come back to.
         failed_lights = 0
         for slot in log_slots:
+            if self.light_fire(slot):
+                failed_lights = 0
+                continue
+            # Stepping back a tile per fire walks our character into its own fires
+            # and whatever else is behind it, and it can't light one where it stands.
+            # Move somewhere clear and give the same log another try before counting
+            # it against us.
+            self.walk_to_random_point_nearby(verbose=False)
             if self.light_fire(slot):
                 failed_lights = 0
                 continue
@@ -314,6 +353,7 @@ class OSRSPowerChopper(OSRSBot):
         # believe succeeded, so the tally can't drift above the truth.
         burned = len(log_slots) - self.count_logs()
         self.logs_burned += burned
+        self.return_to_grove(grove)
         if not burned:
             self.log_msg("Failed to burn any logs.")
             return False
