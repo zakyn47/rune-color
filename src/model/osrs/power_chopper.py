@@ -1,10 +1,13 @@
 import re
 import time
-from typing import List
+from typing import List, Optional
+
+import cv2
+import numpy as np
 
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
-from utilities.geometry import RuneLiteObject
+from utilities.geometry import Point, RuneLiteObject
 from utilities.img_search import BOT_IMAGES
 
 
@@ -12,7 +15,8 @@ class OSRSPowerChopper(OSRSBot):
     def __init__(self):
         bot_title = "Power Chopper"
         description = (
-            "Chop trees, get a full inventory of logs, drop them, then repeat."
+            "Chop trees, get a full inventory of logs, burn them in a fire, then"
+            " repeat."
         )
         super().__init__(bot_title=bot_title, description=description)
         self.run_time = 60 * 10  # Measured in minutes (default 10 hours).
@@ -24,7 +28,11 @@ class OSRSPowerChopper(OSRSBot):
         )  # Secs before relogging.
 
         self.mark_color = self.cp.hsv.CYAN_MARK  # Color of the marked trees.
+        # Inventory slot index of the tinderbox. Assumed fixed since tinderboxes
+        # aren't consumed and nothing earlier in the inventory gets added/removed.
+        self.tinderbox_slot = 1
         self.logs_dropped = 0  # Number of logs dropped.
+        self.logs_burned = 0  # Number of logs burned.
         self.failed_searches = 0  # Number of times we failed to find another tree.
         self.num_considerations = 0  # Num of times we considered switching targets.
         self.woodcut_keywords = ["tree", "Chop", "Tree", "Chop down"]
@@ -65,13 +73,13 @@ class OSRSPowerChopper(OSRSBot):
         self.log_msg("Options set successfully.")
 
     def main_loop(self):
-        """Chop marked trees, gather logs, drop them upon full inventory, and repeat.
+        """Chop marked trees, gather logs, burn them upon full inventory, and repeat.
 
         Run the main game loop.
             1. Travel to a marked tree and chop it.
             2. Continue the chop the tree, gathering logs, until it disappears.
             3. Repeat steps 1 and 2 until our inventory is full.
-            4. Drop all logs in our inventory.
+            4. Light a fire with the tinderbox and burn all logs in our inventory.
 
         For this to work as intended:
             1. Our character must begin next to a grove of color-marked trees. The
@@ -91,7 +99,7 @@ class OSRSPowerChopper(OSRSBot):
             if self.take_breaks:
                 self.potentially_take_a_break()
             if self.is_inv_full():
-                self.drop_all_logs()
+                self.burn_all_logs()
             self.resume_chopping()
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
@@ -229,6 +237,82 @@ class OSRSPowerChopper(OSRSBot):
             return True
         self.log_msg("Failed to drop logs.")
         return False
+
+    def get_fire_location(self) -> Optional[Point]:
+        """Locate a lit fire within the game view by its orange/red glow.
+
+        Returns:
+            Optional[Point]: The approximate screen coordinate of the fire, or None
+                if no fire is currently visible (e.g. it has burned out).
+        """
+        img = self.win.game_view.screenshot()
+        hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+        lower = np.array([5, 150, 150])
+        upper = np.array([25, 255, 255])
+        mask = cv2.inRange(hsv, lower, upper)
+        ys, xs = np.where(mask > 0)
+        if len(xs) == 0:
+            return None
+        cx, cy = int(np.mean(xs)), int(np.mean(ys))
+        return Point(self.win.game_view.left + cx, self.win.game_view.top + cy)
+
+    def light_fire(self, log_slot: int) -> bool:
+        """Use the tinderbox on the given log slot to light a new fire.
+
+        Note that the two clicks must land in quick succession - the "use" selection
+        on the tinderbox expires quickly, and if a second or more passes before the
+        log is clicked, the combination silently fails to register.
+
+        Args:
+            log_slot (int): The inventory slot index of the log to use with the
+                tinderbox.
+
+        Returns:
+            bool: True if a fire was found shortly after attempting to light it,
+                False otherwise.
+        """
+        self.mouse.move_to(self.win.inventory_slots[self.tinderbox_slot].random_point())
+        self.mouse.click()
+        self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
+        self.mouse.click()
+        self.sleep(2, 3)
+        return self.get_fire_location() is not None
+
+    def burn_all_logs(self) -> bool:
+        """Light a fire and burn all logs in our character's inventory.
+
+        Returns:
+            bool: True if at least one log was burned, False otherwise.
+        """
+        log_slots = sorted(set(self.get_log_slots()))
+        if not log_slots:
+            self.log_msg("No logs to burn.")
+            return False
+        _s = "s" if len(log_slots) > 1 else ""
+        self.log_msg(f"Burning {len(log_slots)} log{_s}...")
+        if not self.light_fire(log_slots[0]):
+            self.log_msg("Could not light a fire.")
+            return False
+        burned = 1
+        for slot in log_slots[1:]:
+            fire_point = self.get_fire_location()
+            if fire_point is None:
+                # The fire burned out before we got through all the logs - light a
+                # fresh one on the current log rather than clicking a dead fire.
+                if not self.light_fire(slot):
+                    self.log_msg("Could not relight a fire. Stopping burn.")
+                    break
+                burned += 1
+                continue
+            self.mouse.move_to(self.win.inventory_slots[slot].random_point())
+            self.mouse.click()
+            self.mouse.move_to(fire_point)
+            self.mouse.click()
+            self.sleep(1.5, 2.5)
+            burned += 1
+        self.logs_burned += burned
+        self.log_msg(f"Burned {self.logs_burned} logs so far.", overwrite=True)
+        return True
 
     def resume_chopping(self) -> bool:
         """Mouse to a nearby tree and resume harvesting.
