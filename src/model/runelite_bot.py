@@ -1052,6 +1052,27 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
             ):
                 return i
 
+    def is_inv_slot_empty(self, slot: int, confidence: float = 0.10) -> bool:
+        """Check whether a single inventory slot is empty.
+
+        Note that this only looks at the one slot, so it is far cheaper than counting
+        the whole inventory. It is also a positive test: it waits for emptiness to
+        appear rather than for an item sprite to stop matching, which makes it a much
+        steadier signal to poll on.
+
+        Args:
+            slot (int): The inventory slot index to check (0 to 27).
+            confidence (float, optional): The acceptable confidence level of reporting
+                a match (i.e. p-value), ranging from 0 to 1, where 0 is a perfect
+                match. Defaults to 0.10.
+
+        Returns:
+            bool: True if the given slot is empty, False otherwise.
+        """
+        item_path = BOT_IMAGES / "inventory" / "empty-slot.png"
+        rect = self.win.inventory_slots[slot]
+        return bool(search_img_in_rect(item_path, rect, confidence=confidence))
+
     def get_num_empty_inv_slots(self, verbose=False) -> int:
         """Determine how much space is left in our character's inventory.
 
@@ -1062,11 +1083,9 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         Returns:
             int: The number of empty spaces left our character's inventory.
         """
-        # Determine whether each inventory slot is empty.
-        item_path = BOT_IMAGES / "inventory" / "empty-slot.png"
         num_empty_slots = 0
-        for i, slot in enumerate(self.win.inventory_slots):
-            if search_img_in_rect(item_path, slot, confidence=0.10):
+        for i in range(len(self.win.inventory_slots)):
+            if self.is_inv_slot_empty(i):
                 if verbose:
                     self.log_msg(f"Inventory slot {i+1} is empty.")
                 num_empty_slots += 1

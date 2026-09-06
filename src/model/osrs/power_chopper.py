@@ -255,10 +255,12 @@ class OSRSPowerChopper(OSRSBot):
         on the tinderbox expires quickly, and if a second or more passes before the
         log is clicked, the combination silently fails to register.
 
-        Success is measured by the log actually leaving our inventory rather than by
-        spotting a fire on screen. Detecting a fire by its color is unreliable, as
-        stray orange pixels scattered around the scene read as a fire even when
-        nothing at all is lit.
+        Success is measured by the log's own slot emptying rather than by spotting a
+        fire on screen. Detecting a fire by its color is unreliable, as stray orange
+        pixels scattered around the scene read as a fire even when nothing at all is
+        lit. Watching the single slot rather than recounting every log also keeps this
+        cheap enough to poll quickly, since counting the whole inventory means
+        matching every log sprite against all 28 slots each time round.
 
         Args:
             log_slot (int): The inventory slot index of the log to burn.
@@ -268,21 +270,18 @@ class OSRSPowerChopper(OSRSBot):
         Returns:
             bool: True if the log was consumed, False otherwise.
         """
-        num_logs = self.count_logs()
+        if self.is_inv_slot_empty(log_slot):
+            return False  # Nothing in that slot to burn.
         self.mouse.move_to(self.win.inventory_slots[self.tinderbox_slot].random_point())
         self.mouse.click()
         self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
         self.mouse.click()
         end_time = time.time() + timeout
         while time.time() < end_time:
-            self.sleep(0.6, 1)
-            if self.count_logs() >= num_logs:
-                continue
-            # Confirm the drop on a second read before trusting it. Counting logs is
-            # a template match that occasionally misses a sprite for a frame (e.g.
-            # while a level-up message redraws the chatbox), and one low read alone
-            # is not a burn.
-            if self.count_logs() < num_logs:
+            self.sleep(0.4, 0.7)
+            # Confirm on a second look before trusting it. A slot can read as empty
+            # for a frame while it redraws, and one such read is not a burn.
+            if self.is_inv_slot_empty(log_slot) and self.is_inv_slot_empty(log_slot):
                 return True
         return False
 
