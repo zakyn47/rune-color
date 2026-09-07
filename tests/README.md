@@ -109,3 +109,72 @@ cleanly. Check the captured log for a traceback as well.
 Lines like `Failed to find minimap`, `Failed to find chatbox` and `Couldn't
 orient itself` at the start of a session are the harness probing whether the
 client is logged out. They're expected, and are not bot errors.
+
+# RuneColor Bridge
+
+The bridge plugin pushes exact hitpoints, Prayer, run energy and world point out of
+the client, so the bot no longer has to read them off the screen. `live_bridge.py`
+is what decides whether to trust it.
+
+## Setup
+
+1. Build and sideload the plugin — see [`plugin/README.md`](../plugin/README.md).
+   In short: build the jar with JDK 11, copy it to `~/.runelite/sideloaded-plugins/`,
+   launch RuneLite with `--developer-mode`, then enable "RuneColor Bridge" in the
+   sidebar. It's disabled by default, so sideloading alone isn't enough.
+2. Leave port 8099 free.
+
+| Requirement | Why it matters |
+| --- | --- |
+| **RuneColor Bridge plugin sideloaded and enabled** | Nothing is measured without it; `live_bridge.py` reports 0% availability and fails. |
+| **World Location plugin, with Grid Info ticked** | Still required. `live_bridge.py` measures the bridge *against* that overlay, so the overlay is what makes the comparison possible. It only becomes optional once this test passes. |
+
+## Running
+
+```bash
+venv/Scripts/python.exe tests/live_bridge.py --minutes 10
+```
+
+| Flag | Default | Notes |
+| --- | --- | --- |
+| `--minutes` | 10 | How long to sample, one sample per second. |
+| `--out` | `live_bridge.json` | Where per-field results are written. |
+
+Move around, take some damage, drain some Prayer, and run until your energy drops.
+A test taken standing still only proves the two agree on numbers that never changed.
+
+## Reading the output
+
+```
+samples: 600  availability: 99.83%
+field                agree  disagree  ocr failed     rate
+hitpoints              598         0           1  100.00%
+prayer                 599         0           0  100.00%
+run_energy             597         0           2  100.00%
+world_point            580         0          19  100.00%
+```
+
+- **`disagree` must be 0.** Each one prints with both values. A disagreement means the
+  plugin and the screen describe different worlds, and the plugin is the one to
+  distrust until proven otherwise.
+- **`availability` must be above 99%.** Lower means the feed is dropping, and a bot
+  that falls back to OCR half the time gains nothing from the plugin.
+- **`ocr failed`** counts samples where the *screen* read failed — a hover tooltip over
+  the overlay, a redraw caught mid-frame. Those are excluded from the agreement rate
+  because they measure the screen reader, not the bridge. A high count here is the
+  original problem the bridge exists to solve, not a bridge fault.
+
+A passing run is what licenses turning `COMPARE_BRIDGE_WITH_OCR` off in
+`src/model/runelite_bot.py` and retiring the retry loop in `get_world_point_reliably`.
+
+## The loopback test
+
+`loopback_bridge.py` needs no client and no account. It runs the real Java publisher
+against the real Python receiver and checks that what arrives parses into what was
+sent — the one test that catches the two halves disagreeing about the wire format.
+
+```bash
+venv/Scripts/python.exe tests/loopback_bridge.py
+```
+
+Run it after changing either side of the payload.

@@ -19,3 +19,54 @@ Produces `plugin/build/libs/runecolor-bridge-1.0-all.jar`.
 3. Enable "RuneColor Bridge" in the plugin sidebar.
 
 **Unverified:** whether the installed `RuneLite.exe` launcher actually forwards `--developer-mode` through to the client has not been checked on this machine. If the plugin doesn't show up in the sidebar after sideloading, that's the first thing to check — e.g. by launching the client jar directly with the flag instead of going through `RuneLite.exe`.
+
+# Configuration
+Both settings live under "RuneColor Bridge" in the RuneLite sidebar.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| **Port** | 8099 | The port the bot listens on. Chosen to avoid 8081 (`events_api.py`) and 9420 (`gi_tracker.py`), so all three can run at once. |
+| **Ticks per push** | 1 | Push every Nth game tick. 1 pushes every tick, roughly every 600 ms. |
+
+# What it sends
+One JSON object per tick, POSTed to `http://127.0.0.1:<port>/api/snapshot/`. The
+canonical example is [`tests/fixtures/snapshot_v1.json`](../tests/fixtures/snapshot_v1.json),
+which both test suites pin, so a change on one side that isn't mirrored on the other
+fails a suite rather than failing silently in a live run:
+
+```json
+{
+  "schema": 1,
+  "tick": 123456,
+  "sent_at": 1757193600123,
+  "game_state": "LOGGED_IN",
+  "hitpoints": { "current": 42, "max": 55 },
+  "prayer": { "current": 12, "max": 43 },
+  "run_energy": 87,
+  "world_point": { "x": 3222, "y": 3218, "plane": 0 }
+}
+```
+
+Notes on the fields:
+- `run_energy` is 0-100. RuneLite reports run energy in hundredths of a percent, and
+  the plugin converts it so the scale question never reaches Python.
+- `world_point` is instance-local inside instances, not a true world coordinate.
+- The plugin keeps pushing while logged out, with `game_state` set and the player
+  fields omitted. Going quiet instead would leave the bot unable to tell "logged out"
+  from "plugin dead".
+
+# Troubleshooting
+
+**The bot logs a schema mismatch and disables the bridge.** `schema` has to match
+`BridgeAPI.SCHEMA_VERSION`. The usual cause is a stale jar: the built artifact lives in
+`~/.runelite/sideloaded-plugins/` and does **not** rebuild when you `git pull`. Rebuild
+and copy it across.
+
+**Nothing arrives at all.** Check, in order: the plugin is enabled in the sidebar; its
+port matches the bot's; and the client was launched with `--developer-mode` (see the
+Unverified note above).
+
+**The build fails after a RuneLite update.** `net.runelite:client` is pinned to
+`1.12.38` in `build.gradle` rather than tracking `latest.release`, so the API the
+plugin compiles against cannot change under you without a visible one-line edit. Bump
+that version deliberately.
