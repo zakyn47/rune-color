@@ -9,7 +9,10 @@ repositories {
     mavenCentral()
 }
 
-def runeLiteVersion = 'latest.release'
+// Pinned rather than 'latest.release': a build whose API surface changes
+// silently between runs is harder to debug than one that fails loudly with a
+// one-line bump. Raise this when RuneLite updates far enough to matter.
+def runeLiteVersion = '1.12.38'
 
 dependencies {
     compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
@@ -39,4 +42,12 @@ tasks.named('test') {
 
 shadowJar {
     archiveFileName = "${rootProject.name}-${project.version}-all.jar"
+}
+
+tasks.register('loopback', JavaExec) {
+    group = 'verification'
+    description = 'Publishes one snapshot to the URL in -Purl, for the loopback test.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.runecolor.bridge.LoopbackMain'
+    args = [project.findProperty('url') ?: 'http://127.0.0.1:8099/api/snapshot/']
 }
