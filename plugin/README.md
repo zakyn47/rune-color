@@ -18,20 +18,26 @@ Produces `plugin/build/libs/runecolor-bridge-1.0-all.jar`.
 2. Launch RuneLite with `--developer-mode`.
 3. Enable "RuneColor Bridge" in the plugin sidebar.
 
-**The packaged launcher cannot run developer mode at all.** Two findings, both
-verified on this machine against launcher 2.8.0 and client 1.12.38:
+**The official launcher cannot run developer mode, by design.** From
+`RuneLite.main` in client 1.12.38:
 
-1. `Launcher.getClientArgs` builds the client's arguments from only three sources --
-   the stored `clientArguments` setting, the `RUNELITE_ARGS` environment variable, and
-   the `--debug`/`--safe-mode` toggles. The parser calls `allowsUnrecognizedOptions()`,
-   so `RuneLite.exe --developer-mode` is accepted without complaint and then dropped.
-2. Developer mode also needs assertions enabled (`RuneLite` shows a fatal dialog
-   saying "Developers should enable assertions; Add `-ea` to your JVM arguments").
-   `RUNELITE_ARGS` cannot add a JVM flag, and the launcher **rewrites**
-   `%LOCALAPPDATA%\RuneLite\config.json` on every start, so editing its `vmArgs` does
-   not survive.
+```java
+developerMode = options.has("developer-mode")
+        && RuneLiteProperties.getLauncherVersion() == null;
+```
 
-So run the client directly, bypassing the launcher:
+and `getLauncherVersion()` is just `System.getProperty("runelite.launcher.version")`,
+which `RuneLite.exe` always sets (`-Drunelite.launcher.version=2.8.0`). So the flag is
+ignored whenever the official launcher started the client, silently. Only once
+developer mode is on does the client additionally require assertions, failing with a
+dialog that says "Developers should enable assertions; Add `-ea` to your JVM
+arguments". Two further dead ends, both checked here: the launcher forwards client
+arguments only from `RUNELITE_ARGS`, `--debug` and `--safe-mode`, and it rewrites
+`%LOCALAPPDATA%\RuneLite\config.json` on every start, so its `vmArgs` cannot be
+edited to add `-ea`. `_JAVA_OPTIONS` cannot help either: it can set a system property
+but not unset one, and an empty value is still non-null.
+
+Run the client directly instead, which sets no launcher version:
 
 ```powershell
 & "$env:LOCALAPPDATA\RuneLite\jrein\java.exe" `
@@ -48,6 +54,13 @@ Confirm it worked by looking for this line in `~/.runelite/logs/client.log`:
 ```
 INFO n.r.client.plugins.PluginManager - Side-loading plugin ...runecolor-bridge-1.0-all.jar
 ```
+
+**Jagex accounts collide with this.** A Jagex account authenticates using session
+values the Jagex Launcher injects into the client's environment, and the command above
+starts the client without them, so it cannot log in. Developer mode needs the launcher
+out of the way; a Jagex account needs it involved. Anyone hitting this has to relay
+those environment values into a direct launch, or test on an account that still uses a
+plain username and password.
 
 # Why there is no @Subscribe
 
