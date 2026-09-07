@@ -18,7 +18,29 @@ Produces `plugin/build/libs/runecolor-bridge-1.0-all.jar`.
 2. Launch RuneLite with `--developer-mode`.
 3. Enable "RuneColor Bridge" in the plugin sidebar.
 
-**Unverified:** whether the installed `RuneLite.exe` launcher actually forwards `--developer-mode` through to the client has not been checked on this machine. If the plugin doesn't show up in the sidebar after sideloading, that's the first thing to check — e.g. by launching the client jar directly with the flag instead of going through `RuneLite.exe`.
+**The launcher does not forward `--developer-mode`.** Verified by disassembling
+`RuneLite.jar` (launcher 2.8.0): `Launcher.getClientArgs` builds the client's
+arguments from exactly three sources -- the launcher's stored `clientArguments`
+setting, the `RUNELITE_ARGS` environment variable split on spaces, and the
+`--debug`/`--safe-mode` toggles. The parser calls `allowsUnrecognizedOptions()`, so
+`RuneLite.exe --developer-mode` is accepted without complaint and then dropped. You
+get no error and no plugin.
+
+Use the environment variable instead:
+
+```bash
+RUNELITE_ARGS="--developer-mode" "$LOCALAPPDATA/RuneLite/RuneLite.exe"
+```
+
+The equivalent in PowerShell:
+
+```powershell
+$env:RUNELITE_ARGS = "--developer-mode"
+& "$env:LOCALAPPDATA\RuneLite\RuneLite.exe"
+```
+
+The launcher's own Configuration screen also has a client-arguments field, which sets
+the same thing permanently if you would rather not pass the variable each time.
 
 # Configuration
 Both settings live under "RuneColor Bridge" in the RuneLite sidebar.
