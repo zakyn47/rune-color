@@ -18,29 +18,57 @@ Produces `plugin/build/libs/runecolor-bridge-1.0-all.jar`.
 2. Launch RuneLite with `--developer-mode`.
 3. Enable "RuneColor Bridge" in the plugin sidebar.
 
-**The launcher does not forward `--developer-mode`.** Verified by disassembling
-`RuneLite.jar` (launcher 2.8.0): `Launcher.getClientArgs` builds the client's
-arguments from exactly three sources -- the launcher's stored `clientArguments`
-setting, the `RUNELITE_ARGS` environment variable split on spaces, and the
-`--debug`/`--safe-mode` toggles. The parser calls `allowsUnrecognizedOptions()`, so
-`RuneLite.exe --developer-mode` is accepted without complaint and then dropped. You
-get no error and no plugin.
+**The packaged launcher cannot run developer mode at all.** Two findings, both
+verified on this machine against launcher 2.8.0 and client 1.12.38:
 
-Use the environment variable instead:
+1. `Launcher.getClientArgs` builds the client's arguments from only three sources --
+   the stored `clientArguments` setting, the `RUNELITE_ARGS` environment variable, and
+   the `--debug`/`--safe-mode` toggles. The parser calls `allowsUnrecognizedOptions()`,
+   so `RuneLite.exe --developer-mode` is accepted without complaint and then dropped.
+2. Developer mode also needs assertions enabled (`RuneLite` shows a fatal dialog
+   saying "Developers should enable assertions; Add `-ea` to your JVM arguments").
+   `RUNELITE_ARGS` cannot add a JVM flag, and the launcher **rewrites**
+   `%LOCALAPPDATA%\RuneLite\config.json` on every start, so editing its `vmArgs` does
+   not survive.
 
-```bash
-RUNELITE_ARGS="--developer-mode" "$LOCALAPPDATA/RuneLite/RuneLite.exe"
-```
-
-The equivalent in PowerShell:
+So run the client directly, bypassing the launcher:
 
 ```powershell
-$env:RUNELITE_ARGS = "--developer-mode"
-& "$env:LOCALAPPDATA\RuneLite\RuneLite.exe"
+& "$env:LOCALAPPDATA\RuneLite\jrein\java.exe" `
+  -ea `
+  --add-opens=java.base/java.net=ALL-UNNAMED `
+  --add-opens=java.base/java.io=ALL-UNNAMED `
+  -Xmx768m -Xss2m -Dsun.java2d.d3d=true -Dsun.java2d.opengl=false `
+  -cp "$env:USERPROFILE\.runeliteepository2\*" `
+  net.runelite.client.RuneLite --developer-mode
 ```
 
-The launcher's own Configuration screen also has a client-arguments field, which sets
-the same thing permanently if you would rather not pass the variable each time.
+Confirm it worked by looking for this line in `~/.runelite/logs/client.log`:
+
+```
+INFO n.r.client.plugins.PluginManager - Side-loading plugin ...runecolor-bridge-1.0-all.jar
+```
+
+# Why there is no @Subscribe
+
+The obvious way to sample every tick is `@Subscribe onGameTick`. It does not work for
+a side-loaded plugin. `PluginClassLoader` is a plain `URLClassLoader` and does not
+implement RuneLite's `ReflectUtil.PrivateLookupableClassLoader`, so the event bus
+cannot get the private lookup `LambdaMetafactory` requires, and registration fails:
+
+```
+WARN EventBus - Unable to create lambda for method ...onGameTick(GameTick)
+java.lang.invoke.LambdaConversionException: Invalid caller: com.runecolor.bridge.RuneColorBridgePlugin
+```
+
+The plugin still starts and logs that it is pushing, so the only symptom is one
+warning and a feed that never sends anything. Plugin Hub plugins take a different
+load path and are unaffected, which is why `world-location` works and this did not.
+
+The plugin therefore drives itself from a scheduled timer and hops onto the client
+thread with `ClientThread.invoke`. That costs exact tick alignment, which this design
+does not need: the bot asks whether a reading is younger than two ticks, not which
+tick produced it.
 
 # Configuration
 Both settings live under "RuneColor Bridge" in the RuneLite sidebar.
