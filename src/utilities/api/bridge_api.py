@@ -210,6 +210,15 @@ class BridgeAPI:
         with _shared_lock:
             if _shared_instance is None:
                 _shared_instance = cls(port=port, max_age=max_age)
+            elif _shared_instance.port != port:
+                # Silently handing back a bridge on a different port than the caller
+                # asked for is the sort of thing that gets debugged from the wrong end.
+                log.warning(
+                    "A RuneColor Bridge is already listening on port %s, so the"
+                    " request for port %s is being served by that one instead.",
+                    _shared_instance.port,
+                    port,
+                )
             return _shared_instance
 
     def age(self) -> float:
