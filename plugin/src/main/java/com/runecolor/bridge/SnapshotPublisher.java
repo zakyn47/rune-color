@@ -89,15 +89,22 @@ public class SnapshotPublisher {
     }
 
     private void send(String body) {
-        Request request = new Request.Builder()
-                .url(url)
-                .post(RequestBody.create(JSON, body))
-                .build();
-        try (Response response = http.newCall(request).execute()) {
-            if (response.isSuccessful()) {
-                failureLogged.set(false);
-            } else {
-                logFailureOnce("Bot rejected a snapshot: HTTP " + response.code(), null);
+        // Building the request has to sit inside the try as well. A malformed URL
+        // makes Request.Builder throw, and an exception escaping this method kills
+        // the publisher thread without a word, leaving the bot to wonder why nothing
+        // ever arrives.
+        try {
+            Request request = new Request.Builder()
+                    .url(url)
+                    .post(RequestBody.create(JSON, body))
+                    .build();
+            try (Response response = http.newCall(request).execute()) {
+                if (response.isSuccessful()) {
+                    failureLogged.set(false);
+                } else {
+                    logFailureOnce("Bot rejected a snapshot: HTTP " + response.code(),
+                            null);
+                }
             }
         } catch (Exception e) {
             logFailureOnce("Could not reach the bot", e);

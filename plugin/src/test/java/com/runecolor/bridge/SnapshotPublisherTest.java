@@ -222,4 +222,19 @@ public class SnapshotPublisherTest {
         }
         assertEquals(expected, publisher.failureLogCallCount());
     }
+
+    @Test
+    public void survivesAMalformedUrl() throws Exception {
+        // A bad port in the config must not kill the publisher thread. Building the
+        // request throws, and if that escapes, the bot stops receiving with no clue
+        // why.
+        SnapshotPublisher publisher = new SnapshotPublisher(
+                new OkHttpClient(), new Gson(), "not-a-url");
+        publisher.publish(sample());
+        publisher.publish(sample());
+        Thread.sleep(300);
+        assertEquals("the failure should have been logged once",
+                1, publisher.failureLogCallCount());
+        publisher.close();
+    }
 }
