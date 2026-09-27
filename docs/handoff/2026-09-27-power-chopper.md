@@ -5,8 +5,8 @@ merged into `main` at `4f40600`.
 
 ## Your task
 
-1. **Verify the untested campfire changes live** (commit `469e138`), then merge the
-   branch into `main`.
+1. ~~**Verify the campfire changes live** (commit `469e138`), then merge the
+   branch into `main`.~~ Verified; see "Verified live after `469e138`".
 2. **Fix the remaining chopper issues** listed under "Open issues".
 3. Only after the chopper is done: **add combat and target data to the bridge** (see
    "Next feature").
@@ -43,17 +43,24 @@ Run 7 and run 10 (burns 1–2) on the previous design, which added one log to a 
 - 78 logs over 3 inventories, 0 mismatches, 0 errors.
 - Login from logged out to in game in about 16 s.
 
-### NOT verified live
+### Verified live after `469e138`
 
-Commit `469e138`, which covers:
+Run 3 (30 min, started logged out, login in about 15 s): 104 logs over 4 burns,
+0 mismatches, 0 wrong verdicts, 0 errors, one light per burn. A separate burn
+beside a still-burning Forester's Campfire tended it without lighting (7 of 7
+logs), and the chat showed no "There's a Forester's Campfire nearby".
 
-- `tend_campfire`
-- the right-click fallback in `click_fire`
-- the count-based consumption check
-- never lighting a fire while one is reported nearby
-- `START_TIMEOUT = 5`
+The first live runs of `469e138` found three bugs, since fixed:
 
-Run 11, the test of these, was stopped before it reached the game.
+- **Two fires per burn.** The log leaves its slot a tick or two before the
+  lighting animation starts, so the player still read idle with no fire reported,
+  and the next pass lit a second fire. `wait_for_fire` now waits for the fire to
+  be reported and the player to be idle.
+- **Slow lights counted as failed.** A light the game retries can outlast 4 s; the
+  retry then clicked a random tile (a tree). With the plug-in, `light_fire` now
+  waits out a light still under way.
+- **Crash when a campfire burns out mid-burn.** `tend_campfire` and `click_fire`
+  read `bridge.fire` twice; it went None in between. They read it once now.
 
 ## How to run it
 
@@ -80,7 +87,7 @@ Then copy `build/libs/runecolor-bridge-1.0-all.jar` to `~/.runelite/sideloaded-p
 and restart the client. The fixture `tests/fixtures/snapshot_v1.json` is shared by the
 Java and Python suites.
 
-**Unit tests** (43, no client needed):
+**Unit tests** (52, no client needed):
 
 ```bash
 venv/Scripts/python.exe -m unittest discover -s tests/unit -t .
@@ -95,7 +102,8 @@ venv/Scripts/python.exe -u tests/live_power_chopper.py --runs 1 --minutes 30 --b
 - `--trace` prints each plug-in snapshot whose values changed, plus every pathfinder
   request and response.
 - To start logged out, call the bot's `logout()` first. The harness logs in by itself.
-- Watch it with a Monitor that greps `Burning|Tending|covered|Aimed at|isn't under|wasn't consumed|\[BURN\]|Traceback|SUMMARY`.
+- Watch it with a Monitor that greps `Burning|Tending|covered|Aimed at|isn't under|wasn't consumed|\[BURN\]|\[LIGHT\]|Traceback|SUMMARY`.
+- `[LIGHT]` lines give each light's verdict, whether its slot really emptied, and how long it took.
 - Never poll with `sleep`.
 
 ## Bridge snapshot (schema 1)
@@ -114,26 +122,28 @@ The plug-in POSTs this JSON to `http://127.0.0.1:8099/api/snapshot/` every tick.
 | `idle` | no animation and the idle pose |
 | `fire` | `{x, y}` screen pixels of the nearest Fire or Forester's campfire within 3 tiles, or null |
 
-Animation IDs seen: 877 chop, 733 light, 10572 tend a campfire.
+Animation IDs seen: 877 chop, 733 light, 10572 tend a campfire, 14491 end of
+tending, 867 unknown (see open issues).
 
 The Python side is `src/utilities/api/bridge_api.py`: `BridgeAPI.idle_for`, `.fire`,
 `.animation`, and so on. The new fields are optional, so an older jar still works.
 
 ## Open issues
 
-1. **Campfire flow untested.** Watch the first burn closely.
-2. **Walking away from a fire may not be far enough.** `walk_to_random_point_nearby` may
-   stay inside the plug-in's 3-tile fire radius. In that case `burn_on_one_fire` gives
-   up after `max_failed_lights` (3) tries.
-3. **The pathfinder is sent `"members": true`** (`src/utilities/api/pathfinder.py`), but
-   the account is free-to-play. Long routes could go through members' areas.
-4. **The 90 s chop timeout** in `chop_until_idle` is short for willows. It only causes a
-   harmless re-click.
-5. **Idle for 3 ticks mid-tending** made it tend twice per inventory: the second use
-   finishes the last log or so. This is harmless; it could wait longer.
-6. **Unmatched login art.** `play-now.png` and `click-here-to-play.png` are whole-button
-   captures from specific login themes. If a login stalls, recapture them as text on a
-   transparent background.
+1. **Walking away from a fire may not be far enough.** `walk_to_random_point_nearby`
+   may stay inside the plug-in's 3-tile fire radius. In that case `burn_on_one_fire`
+   gives up after `max_failed_lights` (3) tries. Not seen live yet.
+2. **The 90 s chop timeout** in `chop_until_idle` is short for willows. It only
+   causes a harmless re-click.
+3. **Tending sometimes takes two or three passes per inventory.** Harmless. Once, an
+   unknown animation 867 interrupted the first pass; it was also seen while the
+   user was clicking in game, so it may have been manual input.
+4. **Unmatched login art.** `play-now.png` and `click-here-to-play.png` are
+   whole-button captures from specific login themes. If a login stalls, recapture
+   them as text on a transparent background.
+
+Fixed: the pathfinder sent `"members": true` for a free-to-play account. DAX
+requests now default to `members: false`; `Walker(members=True)` opts in.
 
 ## Next feature: combat and target data
 
