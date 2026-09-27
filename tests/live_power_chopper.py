@@ -197,8 +197,14 @@ def instrument(bot: OSRSPowerChopper, stats: Dict) -> None:
         lights["times"].append(round(time.time() - start, 1))
         lights["ok" if burned else "fail"] += 1
         # The verdict is only trustworthy if it agrees with the slot it describes.
-        if burned != bot.is_inv_slot_empty(log_slot):
+        slot_empty = bot.is_inv_slot_empty(log_slot)
+        if burned != slot_empty:
             lights["wrong_verdicts"] += 1
+        print(
+            f"    [LIGHT] slot={log_slot} verdict={burned} slot_empty={slot_empty}"
+            f" secs={lights['times'][-1]}",
+            flush=True,
+        )
         return burned
 
     def traced_burn() -> bool:
