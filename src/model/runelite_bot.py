@@ -2446,31 +2446,38 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
 
     def wait_for_img_then_click(
         self,
-        png: Union[Path, str],
+        png: Union[Path, str, List[Union[Path, str]]],
         folder: Union[Path, str],
     ) -> bool:
         """Wait for an image (i.e. template) to appear, then left-click it.
 
         Args:
-            png (Union[Path, str]): The PNG template that we want to left-click.
+            png (Union[Path, str, List[Union[Path, str]]]): The PNG template to
+                left-click, or several alternatives, of which whichever appears
+                first is clicked. Alternatives are searched together, so one that
+                never appears costs nothing.
             folder (Union[Path, str], optional): The subfolder within src/img/bot
                 containing `png`.
 
         Returns:
-            bool: True if the template was left-clicked, False otherwise.
+            bool: True if a template was left-clicked, False otherwise.
         """
-        self.log_msg(f"Attempting to click {png} template...")
-        filepath = BOT_IMAGES / folder / png
+        pngs = png if isinstance(png, list) else [png]
+        names = " or ".join(str(p) for p in pngs)
+        self.log_msg(f"Attempting to click {names} template...")
         start_time = time.time()
         while time.time() - start_time < 60:
-            template = search_img_in_rect(filepath, self.win.rectangle())
-            if template:
-                self.mouse.move_to(template.random_point())
-                self.mouse.click()
-                self.log_msg(f"Template clicked: {png}", overwrite=True)
-                return True
+            for candidate in pngs:
+                template = search_img_in_rect(
+                    BOT_IMAGES / folder / candidate, self.win.rectangle()
+                )
+                if template:
+                    self.mouse.move_to(template.random_point())
+                    self.mouse.click()
+                    self.log_msg(f"Template clicked: {candidate}", overwrite=True)
+                    return True
             self.sleep()
-        self.log_msg(f"Could not click {png} template.")
+        self.log_msg(f"Could not click {names} template.")
         return False
 
     def login(self) -> None:
@@ -2479,8 +2486,13 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         # canvas, whatever size the user keeps the window at.
         self.win.focus()
         self.log_msg("Logging in...")  # Click [Play Now] on the home splash.
-        if not self.wait_for_img_then_click("play-now.png", folder="login"):
-            self.wait_for_img_then_click("play-now-gray.png", folder="login")
+        # The splash art changes with the game's login theme. "play-now-gray" is
+        # the button's text alone on a transparent background, so it matches any
+        # theme; "play-now" is a whole button from one theme and was left waiting
+        # a full minute on another before the text was tried.
+        self.wait_for_img_then_click(
+            ["play-now-gray.png", "play-now.png"], folder="login"
+        )
         self.take_break(lo=9, hi=11)  # The client takes a few seconds to connect.
         self.wait_for_img_then_click("click-here-to-play.png", folder="login")
         self.sleep()
