@@ -11,7 +11,9 @@ PINK = (255, 0, 231)
 PURPLE = (170, 0, 255)
 
 # Colors for use with semi-transparent text
-OFF_CYAN_TEXT = ((0, 200, 200), (70, 255, 255))
+# The lower bound reaches 180 because some object names draw darker than the usual
+# (0, 255, 255): "Fire" in "Use Willow logs -> Fire" is (0, 194, 194).
+OFF_CYAN_TEXT = ((0, 180, 180), (70, 255, 255))
 OFF_GREEN_TEXT = ((0, 100, 0), (30, 255, 255))
 OFF_RED_TEXT = ((207, 16, 5), (255, 35, 35))
 OFF_WHITE_TEXT = ((190, 190, 190), (255, 255, 255))

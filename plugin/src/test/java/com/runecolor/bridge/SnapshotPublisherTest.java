@@ -29,7 +29,7 @@ public class SnapshotPublisherTest {
     private static Snapshot sample() {
         return new Snapshot(1, 5, 99L, "LOGGED_IN",
                 new Snapshot.Stat(42, 55), new Snapshot.Stat(12, 43), 87,
-                new Snapshot.Point(3222, 3218, 0));
+                new Snapshot.Point(3222, 3218, 0), 879, false, null);
     }
 
     @Test

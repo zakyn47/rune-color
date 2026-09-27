@@ -84,6 +84,9 @@ class BridgeAPI:
 
         self._snapshot: Dict = {}
         self._arrived_at: Optional[float] = None
+        # When the current unbroken run of idle snapshots began, or None if the last
+        # snapshot was busy or carried no idle flag at all.
+        self._idle_since: Optional[float] = None
         self._disabled = False
         self._lock = threading.Lock()
         self._server = None
@@ -115,6 +118,10 @@ class BridgeAPI:
             with self._lock:
                 self._snapshot = data
                 self._arrived_at = time.time()
+                if data.get("idle") is not True:
+                    self._idle_since = None
+                elif self._idle_since is None:
+                    self._idle_since = self._arrived_at
             return "Snapshot received.", 200
 
         if start:
@@ -314,6 +321,52 @@ class BridgeAPI:
             int(point.get("y", -1)),
             int(point.get("plane", -1)),
         )
+
+    @property
+    def animation(self) -> Optional[int]:
+        """Optional[int]: Our current animation ID, -1 for none, or None if unknown.
+
+        None means no fresh snapshot, or a plug-in built before this field existed.
+        """
+        value = self._field("animation", None)
+        return None if value is None else int(value)
+
+    @property
+    def idle(self) -> Optional[bool]:
+        """Optional[bool]: Whether we are doing nothing this tick, or None if unknown.
+
+        One tick's view. Woodcutting can drop its animation for a tick between swings,
+        so to decide that our character has stopped, prefer `idle_for`.
+        """
+        value = self._field("idle", None)
+        return None if value is None else bool(value)
+
+    @property
+    def idle_for(self) -> Optional[float]:
+        """Optional[float]: Seconds we have been idle without a break, or None.
+
+        0.0 while busy. None if unknown, as for `idle`.
+        """
+        idle = self.idle
+        if idle is None:
+            return None
+        with self._lock:
+            since = self._idle_since
+        if not idle or since is None:
+            return 0.0
+        return time.time() - since
+
+    @property
+    def fire(self) -> Optional[Tuple[int, int]]:
+        """Optional[Tuple[int, int]]: Where to click the nearest fire, or None.
+
+        Screen pixels, ready to click. None if no fire is within a few tiles, if the
+        feed is stale, or if the plug-in predates this field.
+        """
+        point = self._field("fire", None)
+        if not isinstance(point, dict):
+            return None
+        return int(point["x"]), int(point["y"])
 
     @property
     def game_state(self) -> str:

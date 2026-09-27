@@ -207,11 +207,9 @@ class Bot(ABC):
         max_attempts = 3
         for attempt in range(1, max_attempts + 1):
             self.win.focus()
-            # Template matching is not scale-invariant, so a client window that has
-            # drifted to some other size than what the reference images were
-            # captured at will fail to match anything. Force a consistent size
-            # every time so this can't silently break again.
-            self.win.resize(773, 534)
+            # The window is left at whatever size the user chose. With Stretched
+            # Mode off, RuneLite draws the interface at a fixed pixel size in every
+            # layout and window size, so the templates match without resizing.
             time.sleep(0.5)
             try:
                 if self.win.initialize():

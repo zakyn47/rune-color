@@ -52,6 +52,49 @@ class BridgeAPITest(unittest.TestCase):
         self.assertEqual(self.bridge.game_state, "LOGGED_IN")
         self.assertEqual(self.bridge.tick, 123456)
 
+    def test_exposes_animation_and_idle(self):
+        self.post(payload())
+        self.assertEqual(self.bridge.animation, 879)
+        self.assertIs(self.bridge.idle, False)
+        self.assertEqual(self.bridge.idle_for, 0.0)
+
+    def test_exposes_the_nearest_fire(self):
+        self.post(payload())
+        self.assertEqual(self.bridge.fire, (512, 300))
+
+    def test_reports_no_fire_when_none_is_near(self):
+        self.post(dict(payload(), fire=None))
+        self.assertIsNone(self.bridge.fire)
+
+    def test_reports_unknown_idle_before_any_snapshot(self):
+        self.assertIsNone(self.bridge.animation)
+        self.assertIsNone(self.bridge.idle)
+        self.assertIsNone(self.bridge.idle_for)
+
+    def test_reports_unknown_idle_from_a_plugin_that_predates_it(self):
+        # An older jar sends schema 1 without these fields. That is not a schema
+        # mismatch; the bot just has to fall back to reading the screen.
+        old = payload()
+        del old["animation"], old["idle"]
+        self.assertEqual(self.post(old).status_code, 200)
+        self.assertIsNone(self.bridge.idle)
+        self.assertIsNone(self.bridge.idle_for)
+
+    def test_measures_how_long_the_player_has_been_idle(self):
+        idle = dict(payload(), animation=-1, idle=True)
+        self.post(idle)
+        time.sleep(0.1)
+        self.post(dict(idle, tick=idle["tick"] + 1))
+        self.assertGreaterEqual(self.bridge.idle_for, 0.1)
+
+    def test_any_busy_tick_restarts_the_idle_clock(self):
+        idle = dict(payload(), animation=-1, idle=True)
+        self.post(idle)
+        time.sleep(0.1)
+        self.post(payload())  # Busy.
+        self.post(idle)
+        self.assertLess(self.bridge.idle_for, 0.1)
+
     def test_goes_stale_after_max_age(self):
         self.bridge.max_age = 0.05
         self.post(payload())

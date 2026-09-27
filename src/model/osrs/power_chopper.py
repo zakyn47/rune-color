@@ -1,12 +1,18 @@
 import re
 import time
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
 from utilities.geometry import Point, RuneLiteObject
 from utilities.img_search import BOT_IMAGES
 from utilities.walker import Walker
+
+# How long the plug-in must report us idle before we believe we've stopped. Three
+# ticks, so a single tick between axe swings isn't mistaken for the tree being gone.
+IDLE_SECONDS = 1.8
+# How long a click on a tree has to set us walking or chopping.
+START_TIMEOUT = 3
 
 
 class OSRSPowerChopper(OSRSBot):
@@ -319,11 +325,167 @@ class OSRSPowerChopper(OSRSBot):
             self.log_msg(f"Could not walk back to the trees: {exc}")
             return False
 
-    def burn_all_logs(self) -> bool:
-        """Burn every log in our character's inventory, one fire per log.
+    def find_fire(self) -> Optional[Point]:
+        """Find our fire on screen, with a log already selected.
 
-        Note that logs cannot be added to a fire that is already burning. Using a log
-        on a lit fire does nothing at all, so each log gets its own fresh fire.
+        The plug-in reports the nearest fire's screen position. Nothing on screen can
+        stand in for it: colour finds stray orange pixels with no fire lit, and with
+        the camera zoomed out a tile is only a few pixels wide, so hovering guessed
+        offsets around our character misses it. The mouseover is checked before
+        trusting the point, since only a real fire reads "Use ... -> Fire", or
+        "-> Forester's Campfire" once a log has been added to it.
+
+        Returns:
+            Optional[Point]: Where the fire is on screen, or None if the plug-in
+                reports none (or isn't running). The log stays selected either way.
+        """
+        # The mouse takes a moment to arrive, and the fire moves on screen whenever
+        # the camera follows our character, so aim again at where it is now.
+        for _ in range(3):
+            if self.bridge is None or (fire := self.bridge.fire) is None:
+                return None
+            point = Point(*fire)
+            self.mouse.move_to(point)
+            time.sleep(self.game_tick / 6)  # Let the mouseover text redraw.
+            # Case-sensitive: "Campfire" does not contain "Fire".
+            if self.get_mouseover_text(contains=["Fire", "Campfire"]):
+                return point
+        # Say what was under the cursor instead, so a miss can be told apart from a
+        # fire that burnt out or our character standing in the way.
+        self.log_msg(
+            f"Aimed at the fire at {tuple(point)}, but the cursor reads"
+            f" {self.get_mouseover_text()!r}."
+        )
+        return None
+
+    def wait_until_idle(self, timeout: float = 10) -> None:
+        """Wait for our character to finish lighting a fire and stepping off it.
+
+        The log leaves the inventory as soon as lighting starts, but the lighting
+        animation can repeat over several attempts before the step off the fire, and
+        a log used on the fire before then goes nowhere. Two idle ticks in a row
+        means both are over.
+
+        Args:
+            timeout (float, optional): Seconds to wait at most.
+        """
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            if self.bridge is None or (self.bridge.idle_for or 0) >= 2 * self.game_tick:
+                return
+            time.sleep(self.game_tick / 3)
+
+    def add_log_to_fire(self, log_slot: int, timeout: float = 4) -> bool:
+        """Use a log on our fire, which starts our character tending it.
+
+        One use is enough. The fire becomes a Forester's Campfire and our character
+        keeps feeding it logs from the inventory until they run out, which
+        `tend_fire` waits for.
+
+        Args:
+            log_slot (int): The inventory slot index of the log to burn.
+            timeout (float, optional): Seconds to wait for the log to be consumed.
+
+        Returns:
+            bool: True if the log was consumed, False otherwise.
+        """
+        self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
+        self.mouse.click()
+        if self.find_fire() is None:
+            self.log_msg("The fire isn't under the cursor.")
+            # Deselect the log so the next click isn't a "use" on something else.
+            self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
+            self.mouse.click()
+            return False
+        self.mouse.click()
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            if self.is_inv_slot_empty(log_slot) and self.is_inv_slot_empty(log_slot):
+                return True
+            self.sleep(0.15, 0.3)
+        self.log_msg("Used the log on the fire, but it wasn't consumed.")
+        return False
+
+    def tend_fire(self, timeout: float = 120) -> None:
+        """Wait while our character feeds the fire, until it stops.
+
+        Args:
+            timeout (float, optional): Seconds to wait at most. A full inventory
+                takes about a minute.
+        """
+        self.log_msg("Tending the fire...")
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            if (self.bridge.idle_for or 0) >= IDLE_SECONDS:
+                return
+            time.sleep(self.game_tick)
+
+    def light_with_retry(self, log_slot: int) -> bool:
+        """Light a fire with the given log, stepping somewhere clear on a failure.
+
+        Args:
+            log_slot (int): The inventory slot index of the log to light.
+
+        Returns:
+            bool: True if the fire was lit.
+        """
+        if self.light_fire(log_slot):
+            return True
+        # Our character can't light a fire where one already burns, and each fire
+        # steps it back into whatever is behind it. Move somewhere clear and give
+        # the same log another try.
+        self.walk_to_random_point_nearby(verbose=False)
+        return self.light_fire(log_slot)
+
+    def burn_on_one_fire(self) -> None:
+        """Light one fire, use a log on it, and tend it until the logs run out.
+
+        Only the plug-in can find the fire (see `find_fire`) and say when our
+        character has stopped tending it. If the fire burns out or can't be found
+        with logs still left, the next log lights a new one.
+        """
+        failed_lights = 0
+        # Every pass burns at least one log, so this bounds the loop even if
+        # tending keeps stopping early.
+        for _ in range(len(self.win.inventory_slots)):
+            log_slots = sorted(set(self.get_log_slots()))
+            if not log_slots or failed_lights >= self.max_failed_lights:
+                return
+            slot = log_slots[0]
+            if self.bridge.fire is not None and self.add_log_to_fire(slot):
+                self.tend_fire()
+                continue
+            if not self.light_with_retry(slot):
+                failed_lights += 1
+                continue
+            failed_lights = 0
+            # A log used on the fire before lighting and the step off it are over
+            # goes nowhere.
+            self.wait_until_idle()
+
+    def burn_one_fire_per_log(self, log_slots: List[int]) -> None:
+        """Light a separate fire with every log, for when the plug-in isn't running.
+
+        Args:
+            log_slots (List[int]): The inventory slot indices of the logs.
+        """
+        failed_lights = 0
+        for slot in log_slots:
+            if self.light_with_retry(slot):
+                failed_lights = 0
+                continue
+            failed_lights += 1
+            if failed_lights >= self.max_failed_lights:
+                self.log_msg(
+                    f"Failed to light {failed_lights} fires in a row. Stopping burn."
+                )
+                return
+
+    def burn_all_logs(self) -> bool:
+        """Burn every log in our character's inventory.
+
+        With the plug-in, one fire takes them all; without it, each log lights its
+        own.
 
         Returns:
             bool: True if at least one log was burned, False otherwise.
@@ -337,25 +499,10 @@ class OSRSPowerChopper(OSRSBot):
         # Where the trees are, to come back to. Read this properly: one bad
         # read here means never walking back at all.
         grove = self.get_world_point_reliably()
-        failed_lights = 0
-        for slot in log_slots:
-            if self.light_fire(slot):
-                failed_lights = 0
-                continue
-            # Stepping back a tile per fire walks our character into its own fires
-            # and whatever else is behind it, and it can't light one where it stands.
-            # Move somewhere clear and give the same log another try before counting
-            # it against us.
-            self.walk_to_random_point_nearby(verbose=False)
-            if self.light_fire(slot):
-                failed_lights = 0
-                continue
-            failed_lights += 1
-            if failed_lights >= self.max_failed_lights:
-                self.log_msg(
-                    f"Failed to light {failed_lights} fires in a row. Stopping burn."
-                )
-                break
+        if self.bridge is not None and self.bridge.idle_for is not None:
+            self.burn_on_one_fire()
+        else:
+            self.burn_one_fire_per_log(log_slots)
         # Count what actually left the inventory rather than how many lights we
         # believe succeeded, so the tally can't drift above the truth.
         burned = len(log_slots) - self.count_logs()
@@ -365,6 +512,50 @@ class OSRSPowerChopper(OSRSBot):
             self.log_msg("Failed to burn any logs.")
             return False
         self.log_msg(f"Burned {self.logs_burned} logs so far.", overwrite=True)
+        return True
+
+    def chop_until_idle(self, timeout: float = 90) -> Optional[bool]:
+        """Wait out a chop using the plug-in's idle flag, just after clicking a tree.
+
+        The screen-only fallback reads the top chat line, which never expires once
+        the tree is gone, so it can only give up on a timer. The plug-in says outright
+        when our character stops, so control returns to `main_loop` as soon as it
+        does, to burn a full inventory or find the next tree.
+
+        Args:
+            timeout (float, optional): Seconds to chop one tree for at most.
+
+        Returns:
+            Optional[bool]: True once we have chopped and stopped, False if the click
+                never set us moving, or None if the plug-in can't tell us, in which
+                case the caller reads the screen instead.
+        """
+        if self.bridge is None or self.bridge.idle_for is None:
+            return None
+        start = time.time()
+        while (
+            idle_for := self.bridge.idle_for
+        ) and time.time() - start < START_TIMEOUT:
+            time.sleep(self.game_tick / 3)
+        if idle_for is None:
+            return None
+        if idle_for:
+            self.log_msg("Clicked the tree, but we never started moving.")
+            return False
+        self.log_msg("Chopping... (waiting for the plug-in to report us idle)")
+        self.num_considerations = 1
+        while time.time() - start < timeout:
+            idle_for = self.bridge.idle_for
+            if idle_for is None:
+                return True  # Feed lost. Let `main_loop` look again.
+            if idle_for >= IDLE_SECONDS:
+                self.log_msg("Idle: the tree is gone or the inventory is full.")
+                return True
+            prob_move_cursor = 0.10 / (2 * self.num_considerations)
+            self.potentially_mouse_to_second_closest_tree(prob_move_cursor)
+            self.num_considerations += 1
+            self.sleep(0.3, 0.6)
+        self.log_msg("Chopping timeout reached. Reassessing.")
         return True
 
     def resume_chopping(self) -> bool:
@@ -402,6 +593,9 @@ class OSRSPowerChopper(OSRSBot):
             self.mouse.click()
             self.sleep()
             self.mouse.click()
+            chopped = self.chop_until_idle()
+            if chopped is not None:
+                return chopped
             while self.is_traveling():
                 self.sleep(4, 5)
             if self.is_harvesting:

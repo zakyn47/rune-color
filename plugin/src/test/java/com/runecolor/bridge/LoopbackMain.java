@@ -10,7 +10,7 @@ public final class LoopbackMain {
                 new SnapshotPublisher(new OkHttpClient(), new Gson(), args[0]);
         publisher.publish(new Snapshot(1, 123456, 1757193600123L, "LOGGED_IN",
                 new Snapshot.Stat(42, 55), new Snapshot.Stat(12, 43), 87,
-                new Snapshot.Point(3222, 3218, 0)));
+                new Snapshot.Point(3222, 3218, 0), 879, false, null));
         Thread.sleep(2000);
         publisher.close();
     }

@@ -58,11 +58,16 @@ class Window:
     def moved(self) -> bool:
         """Say whether the client has moved or resized since it was last measured.
 
-        A window that has never been measured counts as moved.
+        A window that has never been measured has not moved: there are no regions
+        to be stale yet, and the bot measures it itself when it starts. Treating it
+        as moved sent every `sleep` during login into a doomed measure of the login
+        screen.
 
         Returns:
             bool: True if the regions no longer match the client's position.
         """
+        if self._measured_at is None:
+            return False
         rect = self.rectangle()
         return (rect.left, rect.top, rect.width, rect.height) != self._measured_at
 
