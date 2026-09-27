@@ -333,7 +333,37 @@ class Bot(ABC):
         if lo >= hi:
             self.log_msg("Lower bound must be less than upper bound to `sleep`.")
             raise ValueError
+        # Between actions is the one safe moment to re-measure: nothing is mid-click
+        # on a region that is about to be replaced.
+        self.remeasure_if_moved()
         time.sleep(rd.biased_trunc_norm_samp(lo, hi))
+
+    def remeasure_if_moved(self) -> bool:
+        """Re-locate the client's regions if the window has moved or been resized.
+
+        Every region is stored in absolute screen coordinates, measured when the bot
+        started, so dragging or resizing the client leaves them all pointing at the
+        wrong pixels. Checking costs one window-geometry lookup; the re-measure itself
+        only runs after a change. It does not force the window back to a set size,
+        because a resize here is the user's choice.
+
+        A failed re-measure, typically mid-drag, leaves the window marked as moved, so
+        the next call tries again rather than trusting stale regions.
+
+        Returns:
+            bool: True if the regions match the window now, False if re-measuring
+                failed.
+        """
+        try:
+            if not self.win.moved():
+                return True
+            self.log_msg("Client window moved or resized. Re-measuring its regions...")
+            return bool(self.win.initialize())
+        except Exception as exc:  # noqa: BLE001
+            # A closed client lands here too. `sleep` never raised before this check
+            # existed, and a housekeeping step must not start making it.
+            self.log_msg(f"Re-measuring the client window failed: {exc}")
+            return False
 
     def take_break(self, lo: int = 1, hi: int = 30, fancy: bool = False) -> None:
         """Take a break for a random amount of time.
