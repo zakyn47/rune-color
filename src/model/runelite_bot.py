@@ -2475,10 +2475,9 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
 
     def login(self) -> None:
         """Log into OSRS from the home splash."""
+        # No resize: the login screen is drawn at a fixed size in the middle of the
+        # canvas, whatever size the user keeps the window at.
         self.win.focus()
-        self.win.resize(
-            773, 534
-        )  # Match the size the login templates were captured at.
         self.log_msg("Logging in...")  # Click [Play Now] on the home splash.
         if not self.wait_for_img_then_click("play-now.png", folder="login"):
             self.wait_for_img_then_click("play-now-gray.png", folder="login")
