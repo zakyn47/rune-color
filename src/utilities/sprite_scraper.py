@@ -17,6 +17,13 @@ if __name__ == "__main__":
 import utilities.img_search as imsearch
 
 
+# The wiki answers python-requests' default User-Agent with a 403 HTML page, and its
+# API policy asks clients to identify themselves.
+HEADERS = {
+    "User-Agent": "rune-color sprite scraper (https://github.com/zakyn47/rune-color)"
+}
+
+
 class ImageType(IntEnum):
     NORMAL = 0
     BANK = 1
@@ -201,7 +208,9 @@ class SpriteScraper:
         }
 
         try:
-            response = requests.get(url=f"{self.BASE_URL}/api.php", params=params)
+            response = requests.get(
+                url=f"{self.BASE_URL}api.php", params=params, headers=HEADERS
+            )
             data = response.json()
             pages = data["query"]["pages"]
             page_id = list(pages.keys())[0]
@@ -279,7 +288,7 @@ class SpriteScraper:
         """
         notify_callback("Downloading image...")
         try:
-            response = requests.get(img_url)
+            response = requests.get(img_url, headers=HEADERS)
             downloaded_img = np.frombuffer(response.content, dtype="uint8")
             downloaded_img = cv2.imdecode(downloaded_img, cv2.IMREAD_UNCHANGED)
             self.__save_image(
