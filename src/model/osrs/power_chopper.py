@@ -11,8 +11,9 @@ from utilities.walker import Walker
 # How long the plug-in must report us idle before we believe we've stopped. Three
 # ticks, so a single tick between axe swings isn't mistaken for the tree being gone.
 IDLE_SECONDS = 1.8
-# How long a click on a tree has to set us walking or chopping.
-START_TIMEOUT = 3
+# How long a click on a tree has to set us walking or chopping. Three seconds gave
+# up on clicks that did start a chop, only a little later.
+START_TIMEOUT = 5
 
 
 class OSRSPowerChopper(OSRSBot):
@@ -358,6 +359,31 @@ class OSRSPowerChopper(OSRSBot):
         )
         return None
 
+    def click_fire(self) -> bool:
+        """Click our fire with a log selected, through the right-click menu if need be.
+
+        With the camera looking straight down, a willow's canopy is drawn over a
+        fire lit beside it, so the top option there is the tree and the fire is
+        one of the "N more options". A live run read exactly that:
+        "Use -> Willow tree / 1 more options".
+
+        Returns:
+            bool: True if the fire was clicked.
+        """
+        if self.find_fire() is not None:
+            self.mouse.click()
+            return True
+        if self.bridge is None or self.bridge.fire is None:
+            return False
+        self.mouse.move_to(Point(*self.bridge.fire))
+        if not self.get_mouseover_text(contains="more"):
+            return False
+        self.log_msg("The fire is covered. Choosing it from the right-click menu.")
+        # Case-sensitive: "Campfire" does not contain "Fire".
+        return self.right_click_select_context_menu(
+            ["Fire", "Campfire"], color=self.cp.bgr.OFF_CYAN_TEXT, exit_txt="Cancel"
+        )
+
     def wait_until_idle(self, timeout: float = 10) -> None:
         """Wait for our character to finish lighting a fire and stepping off it.
 
@@ -375,7 +401,7 @@ class OSRSPowerChopper(OSRSBot):
                 return
             time.sleep(self.game_tick / 3)
 
-    def add_log_to_fire(self, log_slot: int, timeout: float = 4) -> bool:
+    def add_log_to_fire(self, log_slot: int, timeout: float = 8) -> bool:
         """Use a log on our fire, which starts our character tending it.
 
         One use is enough. The fire becomes a Forester's Campfire and our character
@@ -384,25 +410,28 @@ class OSRSPowerChopper(OSRSBot):
 
         Args:
             log_slot (int): The inventory slot index of the log to burn.
-            timeout (float, optional): Seconds to wait for the log to be consumed.
+            timeout (float, optional): Seconds to wait for a log to be consumed,
+                which includes walking to a fire a few tiles away.
 
         Returns:
-            bool: True if the log was consumed, False otherwise.
+            bool: True if a log was consumed, False otherwise.
         """
+        logs_before = self.count_logs()
         self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
         self.mouse.click()
-        if self.find_fire() is None:
+        if not self.click_fire():
             self.log_msg("The fire isn't under the cursor.")
             # Deselect the log so the next click isn't a "use" on something else.
             self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
             self.mouse.click()
             return False
-        self.mouse.click()
+        # Any log counts, not just the one clicked: tending takes them in its own
+        # order, and walking to the fire first delays it.
         end_time = time.time() + timeout
         while time.time() < end_time:
-            if self.is_inv_slot_empty(log_slot) and self.is_inv_slot_empty(log_slot):
+            if self.count_logs() < logs_before:
                 return True
-            self.sleep(0.15, 0.3)
+            self.sleep(0.4, 0.6)
         self.log_msg("Used the log on the fire, but it wasn't consumed.")
         return False
 
@@ -437,28 +466,67 @@ class OSRSPowerChopper(OSRSBot):
         self.walk_to_random_point_nearby(verbose=False)
         return self.light_fire(log_slot)
 
-    def burn_on_one_fire(self) -> None:
-        """Light one fire, use a log on it, and tend it until the logs run out.
+    def tend_campfire(self, timeout: float = 8) -> bool:
+        """Click a Forester's Campfire, whose left-click option is "Tend-to".
 
-        Only the plug-in can find the fire (see `find_fire`) and say when our
-        character has stopped tending it. If the fire burns out or can't be found
-        with logs still left, the next log lights a new one.
+        Tending needs nothing selected: our character feeds it logs from the
+        inventory by itself.
+
+        Args:
+            timeout (float, optional): Seconds to wait for a log to be consumed,
+                which includes walking to the campfire.
+
+        Returns:
+            bool: True if tending started, i.e. a log was consumed.
         """
-        failed_lights = 0
-        # Every pass burns at least one log, so this bounds the loop even if
-        # tending keeps stopping early.
+        if self.bridge is None or self.bridge.fire is None:
+            return False
+        logs_before = self.count_logs()
+        self.mouse.move_to(Point(*self.bridge.fire))
+        time.sleep(self.game_tick / 6)  # Let the mouseover text redraw.
+        if not self.get_mouseover_text(contains="Tend"):
+            return False
+        self.mouse.click()
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            if self.count_logs() < logs_before:
+                return True
+            self.sleep(0.4, 0.6)
+        return False
+
+    def burn_on_one_fire(self) -> None:
+        """Burn every log on one fire, tending it until the logs run out.
+
+        A fire the plug-in reports nearby is always used, never replaced: the game
+        refuses to light a fire beside a Forester's Campfire ("There's a Forester's
+        Campfire nearby, help tend to that one or move further away"), and each
+        refused attempt drops the log on the ground. A campfire is tended
+        directly; a plain fire gets one log used on it, which turns it into a
+        campfire. Only with no fire nearby, or one that can't be clicked after
+        moving away from it, is a new one lit.
+        """
+        failed = 0
+        # Every successful pass burns at least one log, so this bounds the loop
+        # even if tending keeps stopping early.
         for _ in range(len(self.win.inventory_slots)):
             log_slots = sorted(set(self.get_log_slots()))
-            if not log_slots or failed_lights >= self.max_failed_lights:
+            if not log_slots or failed >= self.max_failed_lights:
                 return
             slot = log_slots[0]
-            if self.bridge.fire is not None and self.add_log_to_fire(slot):
-                self.tend_fire()
+            if self.bridge.fire is not None:
+                if self.tend_campfire() or self.add_log_to_fire(slot):
+                    failed = 0
+                    self.tend_fire()
+                    continue
+                # There is a fire, but it can't be clicked. Lighting beside it is
+                # refused, so get clear of it first.
+                failed += 1
+                self.walk_to_random_point_nearby(verbose=False)
                 continue
             if not self.light_with_retry(slot):
-                failed_lights += 1
+                failed += 1
                 continue
-            failed_lights = 0
+            failed = 0
             # A log used on the fire before lighting and the step off it are over
             # goes nowhere.
             self.wait_until_idle()
