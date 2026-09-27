@@ -50,8 +50,10 @@ class FakeBot:
 
 
 class WindowMovedTest(unittest.TestCase):
-    def test_unmeasured_window_counts_as_moved(self):
-        self.assertTrue(FakeWindow(Rectangle(0, 0, 800, 600)).moved())
+    def test_unmeasured_window_has_not_moved(self):
+        # Before the bot measures it, e.g. on the login screen, there is nothing to
+        # re-measure. Doing it anyway retried a doomed measure on every sleep.
+        self.assertFalse(FakeWindow(Rectangle(0, 0, 800, 600)).moved())
 
     def test_same_rectangle_is_not_moved(self):
         win = FakeWindow(Rectangle(0, 0, 800, 600))
