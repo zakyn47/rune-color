@@ -1,18 +1,20 @@
 import re
 import time
-from typing import List
+from typing import List, Tuple
 
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
-from utilities.geometry import RuneLiteObject
+from utilities.geometry import Point, RuneLiteObject
 from utilities.img_search import BOT_IMAGES
+from utilities.walker import Walker
 
 
 class OSRSPowerChopper(OSRSBot):
     def __init__(self):
-        bot_title = "not ready"
+        bot_title = "Power Chopper"
         description = (
-            "Chop trees, get a full inventory of logs, drop them, then repeat."
+            "Chop trees, get a full inventory of logs, burn them in a fire, then"
+            " repeat."
         )
         super().__init__(bot_title=bot_title, description=description)
         self.run_time = 60 * 10  # Measured in minutes (default 10 hours).
@@ -24,7 +26,15 @@ class OSRSPowerChopper(OSRSBot):
         )  # Secs before relogging.
 
         self.mark_color = self.cp.hsv.CYAN_MARK  # Color of the marked trees.
+        # Inventory slot index of the tinderbox. Assumed fixed since tinderboxes
+        # aren't consumed and nothing earlier in the inventory gets added/removed.
+        self.tinderbox_slot = 1
+        # Lighting a fire steps our character back a tile, so a run of failed lights
+        # usually means we've backed into a wall and have nowhere left to burn.
+        self.max_failed_lights = 3
+        self.walker = Walker(self, dest_square_side_length=4)
         self.logs_dropped = 0  # Number of logs dropped.
+        self.logs_burned = 0  # Number of logs burned.
         self.failed_searches = 0  # Number of times we failed to find another tree.
         self.num_considerations = 0  # Num of times we considered switching targets.
         self.woodcut_keywords = ["tree", "Chop", "Tree", "Chop down"]
@@ -65,13 +75,13 @@ class OSRSPowerChopper(OSRSBot):
         self.log_msg("Options set successfully.")
 
     def main_loop(self):
-        """Chop marked trees, gather logs, drop them upon full inventory, and repeat.
+        """Chop marked trees, gather logs, burn them upon full inventory, and repeat.
 
         Run the main game loop.
             1. Travel to a marked tree and chop it.
             2. Continue the chop the tree, gathering logs, until it disappears.
             3. Repeat steps 1 and 2 until our inventory is full.
-            4. Drop all logs in our inventory.
+            4. Light a fire with the tinderbox and burn all logs in our inventory.
 
         For this to work as intended:
             1. Our character must begin next to a grove of color-marked trees. The
@@ -91,7 +101,7 @@ class OSRSPowerChopper(OSRSBot):
             if self.take_breaks:
                 self.potentially_take_a_break()
             if self.is_inv_full():
-                self.drop_all_logs()
+                self.burn_all_logs()
             self.resume_chopping()
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
@@ -212,8 +222,7 @@ class OSRSPowerChopper(OSRSBot):
     def drop_all_logs(self) -> bool:
         """Drop all logs from our character's inventory.
 
-        This function relies on the Left Click Drop RuneLite plug-in being configured
-        correctly for the corresponding variety of logs we're chopping.
+        This function relies on the shift-click drop ingame setting being enabled.
 
         Returns:
             bool: True if the logs were successfully dropped, False otherwise.
@@ -230,6 +239,133 @@ class OSRSPowerChopper(OSRSBot):
             return True
         self.log_msg("Failed to drop logs.")
         return False
+
+    def count_logs(self) -> int:
+        """Count the logs of any type in our character's inventory.
+
+        Returns:
+            int: The number of inventory slots filled with logs.
+        """
+        return len(set(self.get_log_slots()))
+
+    def light_fire(self, log_slot: int, timeout: float = 4) -> bool:
+        """Use the tinderbox on the given log slot to burn it on a fresh fire.
+
+        Note that the two clicks must land in quick succession - the "use" selection
+        on the tinderbox expires quickly, and if a second or more passes before the
+        log is clicked, the combination silently fails to register.
+
+        Success is measured by the log's own slot emptying rather than by spotting a
+        fire on screen. Detecting a fire by its color is unreliable, as stray orange
+        pixels scattered around the scene read as a fire even when nothing at all is
+        lit. Watching the single slot rather than recounting every log also keeps this
+        cheap enough to poll quickly, since counting the whole inventory means
+        matching every log sprite against all 28 slots each time round.
+
+        Args:
+            log_slot (int): The inventory slot index of the log to burn.
+            timeout (float, optional): Seconds to wait for the log to be consumed
+                before giving up. Defaults to 4, which is generous next to the half
+                second a successful light actually takes. A light either works almost
+                at once or not at all, so waiting longer only slows down the retry.
+
+        Returns:
+            bool: True if the log was consumed, False otherwise.
+        """
+        if self.is_inv_slot_empty(log_slot):
+            return False  # Nothing in that slot to burn.
+        self.mouse.move_to(self.win.inventory_slots[self.tinderbox_slot].random_point())
+        self.mouse.click()
+        self.mouse.move_to(self.win.inventory_slots[log_slot].random_point())
+        self.mouse.click()
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            # Look before sleeping. A log leaves its slot about half a second after
+            # the clicks land, so waiting first would sit through a burn that has
+            # already happened.
+            #
+            # Confirm on a second look before trusting it. A slot can read as empty
+            # for a frame while it redraws, and one such read is not a burn.
+            if self.is_inv_slot_empty(log_slot) and self.is_inv_slot_empty(log_slot):
+                return True
+            self.sleep(0.15, 0.3)
+        return False
+
+    def return_to_grove(self, world_point: Tuple[int, int, int]) -> bool:
+        """Walk back to the world point our character started burning from.
+
+        Lighting a fire steps our character back a tile, so burning a full inventory
+        walks it a good distance from the trees it was chopping. Left alone it ends up
+        with no marked trees in the game view at all and nothing left to harvest.
+
+        Args:
+            world_point (Tuple[int, int, int]): The (x, y, plane) world point to walk
+                back to, as returned by `get_world_point`.
+
+        Returns:
+            bool: True if we made it back, False otherwise.
+        """
+        x, y, _ = world_point
+        if x == -1:  # `get_world_point` couldn't read the tile overlay.
+            return False
+        if self.get_world_point()[:2] == (x, y):
+            return True
+        self.log_msg("Returning to the trees...")
+        try:
+            return self.walker.walk_to(Point(x, y))
+        except Exception as exc:
+            # Pathfinding is a network call, and `walk` indexes an empty path when the
+            # API gives nothing back. Losing our way back isn't worth crashing over.
+            self.log_msg(f"Could not walk back to the trees: {exc}")
+            return False
+
+    def burn_all_logs(self) -> bool:
+        """Burn every log in our character's inventory, one fire per log.
+
+        Note that logs cannot be added to a fire that is already burning. Using a log
+        on a lit fire does nothing at all, so each log gets its own fresh fire.
+
+        Returns:
+            bool: True if at least one log was burned, False otherwise.
+        """
+        log_slots = sorted(set(self.get_log_slots()))
+        if not log_slots:
+            self.log_msg("No logs to burn.")
+            return False
+        _s = "s" if len(log_slots) > 1 else ""
+        self.log_msg(f"Burning {len(log_slots)} log{_s}...")
+        # Where the trees are, to come back to. Read this properly: one bad
+        # read here means never walking back at all.
+        grove = self.get_world_point_reliably()
+        failed_lights = 0
+        for slot in log_slots:
+            if self.light_fire(slot):
+                failed_lights = 0
+                continue
+            # Stepping back a tile per fire walks our character into its own fires
+            # and whatever else is behind it, and it can't light one where it stands.
+            # Move somewhere clear and give the same log another try before counting
+            # it against us.
+            self.walk_to_random_point_nearby(verbose=False)
+            if self.light_fire(slot):
+                failed_lights = 0
+                continue
+            failed_lights += 1
+            if failed_lights >= self.max_failed_lights:
+                self.log_msg(
+                    f"Failed to light {failed_lights} fires in a row. Stopping burn."
+                )
+                break
+        # Count what actually left the inventory rather than how many lights we
+        # believe succeeded, so the tally can't drift above the truth.
+        burned = len(log_slots) - self.count_logs()
+        self.logs_burned += burned
+        self.return_to_grove(grove)
+        if not burned:
+            self.log_msg("Failed to burn any logs.")
+            return False
+        self.log_msg(f"Burned {self.logs_burned} logs so far.", overwrite=True)
+        return True
 
     def resume_chopping(self) -> bool:
         """Mouse to a nearby tree and resume harvesting.
@@ -270,9 +406,21 @@ class OSRSPowerChopper(OSRSBot):
                 self.sleep(4, 5)
             if self.is_harvesting:
                 self.num_considerations = 1
+                # `is_harvesting` reads the top chat line, which never expires on its
+                # own (nothing overwrites it once the tree despawns and we go idle).
+                # Without a cap this loop can never exit on a stale positive, so it
+                # never returns control to `main_loop` to check the inventory or
+                # search for a new tree. 90s is comfortably longer than a single
+                # regular tree takes to deplete at low Woodcutting levels.
+                harvest_start = time.time()
+                harvest_timeout = 90
                 while self.is_harvesting:
+                    if time.time() - harvest_start >= harvest_timeout:
+                        self.log_msg("Harvesting timeout reached. Reassessing.")
+                        break
                     prob_move_cursor = 0.10 / (2 * self.num_considerations)
                     self.potentially_mouse_to_second_closest_tree(prob_move_cursor)
                     self.num_considerations += 1
+                    self.sleep(0.6, 1.2)  # Pace to roughly a game tick or two.
                 return True
         return False

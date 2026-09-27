@@ -151,6 +151,7 @@ class RuneLiteWindow(Window):
             c = self._locate_control_panel(client_rect)
             d = self._locate_game_view()
             if all([a, b, c, d]):
+                self.mark_measured()
                 print(f"Window.initialize() took {time.time() - start_time} seconds.")
                 return True
             return False

@@ -644,7 +644,7 @@ class App(ctk.CTk):
 
 if __name__ == "__main__":
     # test without the GUI. Press Left-Ctrl to stop.
-    run_without_gui = True
+    run_without_gui = False
     if run_without_gui:
         from model.osrs.burthorpe_cooker import Cooker
 

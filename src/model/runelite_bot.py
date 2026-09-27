@@ -23,10 +23,17 @@ from model.bot import Bot
 from model.runelite_window import RuneLiteWindow
 from model.window import Window
 from utilities import settings
+from utilities.api.bridge_api import BridgeAPI
 from utilities.color_util import Color, ColorPalette, isolate_colors, isolate_contours
 from utilities.extract_contours import extract_contours
 from utilities.geometry import Point, Rectangle, RuneLiteObject, cosine_similarity
 from utilities.img_search import BOT_IMAGES, search_img_in_rect
+
+# Stage A measurement: check every fresh plug-in reading against the screen and log
+# any disagreement. Costs one OCR read per call. Off since `tests/live_bridge.py`
+# passed on a live client (135 samples, 0 disagreements); turn it back on to audit
+# the plug-in again, for example after a RuneLite API change.
+COMPARE_BRIDGE_WITH_OCR = False
 
 
 class RuneLiteBot(Bot, metaclass=ABCMeta):
@@ -40,6 +47,7 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
     """
 
     win: RuneLiteWindow = None  # Every `RuneLiteBot` runs in a `RuneLiteWindow`.
+    bridge: BridgeAPI = None  # Set by `attach_bridge`; None means read the screen.
     cp = ColorPalette()  # Defining here allows for default kwarg colors in type hints.
 
     # The game tick serves as the fundamental time unit within OSRS servers,
@@ -68,6 +76,71 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         """
         super().__init__(game_title, bot_title, description, window)
         self.num_relogs = 0  # How many times we have logged in and out of RuneLite.
+        self.bridge = None  # Opt in with `attach_bridge`; until then, read the screen.
+
+    # --- Bridge ---
+    def attach_bridge(self, port: int = 8099, max_age: float = 1.2) -> None:
+        """Start receiving exact game state from the RuneColor Bridge plug-in.
+
+        Attaching is opt-in because it binds a port. Once attached, `get_hp`,
+        `get_prayer`, `get_run_energy` and `get_world_point` prefer the plug-in's exact
+        values and fall back to OCR whenever the feed goes stale, so a plug-in that
+        isn't running costs nothing but the fallbacks it counts.
+
+        Args:
+            port (int, optional): The local port to listen on. Defaults to 8099.
+            max_age (float, optional): How many seconds a snapshot stays usable.
+                Defaults to 1.2, which is two game ticks.
+        """
+        self.bridge = BridgeAPI.shared(port=port, max_age=max_age)
+
+    def detach_bridge(self) -> None:
+        """Stop preferring plug-in values, reverting every read to OCR."""
+        self.bridge = None
+
+    def _from_bridge(self, read_bridge, read_ocr, label: str, sentinel):
+        """Return the plug-in's value if it is fresh, otherwise the OCR value.
+
+        A stale or absent feed is not an error. It's the state the bot runs in whenever
+        the plug-in isn't loaded, so it falls through to the OCR read that has always
+        been there.
+
+        While `COMPARE_BRIDGE_WITH_OCR` is on, a fresh plug-in read is also checked
+        against the screen and any disagreement is logged. That comparison is a stage A
+        measurement: it turns the first live run into a correctness test of the payload,
+        proving the plug-in right because the two agree rather than because the numbers
+        looked plausible. Turn it off once the live test reports agreement.
+
+        Args:
+            read_bridge (Callable): Reads the value from the bridge.
+            read_ocr (Callable): Reads the value from the screen.
+            label (str): Name of the value, for the disagreement warning.
+            sentinel: The value an OCR read returns when it fails.
+
+        Returns:
+            The plug-in's value when fresh, otherwise the OCR value.
+        """
+        if self.bridge is None or not self.bridge.is_fresh():
+            if self.bridge is not None:
+                self.bridge.note_fallback()
+            return read_ocr()
+
+        value = read_bridge()
+        if COMPARE_BRIDGE_WITH_OCR:
+            try:
+                seen = read_ocr()
+                # A failed OCR read is the sentinel, not a disagreement worth
+                # reporting.
+                if seen != sentinel and seen != value:
+                    self.log_msg(
+                        f"Bridge and OCR disagree on {label}: bridge={value!r},"
+                        f" screen={seen!r}."
+                    )
+            except Exception:  # noqa: BLE001
+                # The comparison is diagnostics. It must never break the read it
+                # audits.
+                pass
+        return value
 
     # --- OCR ---
     def get_mouseover_text(
@@ -1052,6 +1125,27 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
             ):
                 return i
 
+    def is_inv_slot_empty(self, slot: int, confidence: float = 0.10) -> bool:
+        """Check whether a single inventory slot is empty.
+
+        Note that this only looks at the one slot, so it is far cheaper than counting
+        the whole inventory. It is also a positive test: it waits for emptiness to
+        appear rather than for an item sprite to stop matching, which makes it a much
+        steadier signal to poll on.
+
+        Args:
+            slot (int): The inventory slot index to check (0 to 27).
+            confidence (float, optional): The acceptable confidence level of reporting
+                a match (i.e. p-value), ranging from 0 to 1, where 0 is a perfect
+                match. Defaults to 0.10.
+
+        Returns:
+            bool: True if the given slot is empty, False otherwise.
+        """
+        item_path = BOT_IMAGES / "inventory" / "empty-slot.png"
+        rect = self.win.inventory_slots[slot]
+        return bool(search_img_in_rect(item_path, rect, confidence=confidence))
+
     def get_num_empty_inv_slots(self, verbose=False) -> int:
         """Determine how much space is left in our character's inventory.
 
@@ -1062,11 +1156,9 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         Returns:
             int: The number of empty spaces left our character's inventory.
         """
-        # Determine whether each inventory slot is empty.
-        item_path = BOT_IMAGES / "inventory" / "empty-slot.png"
         num_empty_slots = 0
-        for i, slot in enumerate(self.win.inventory_slots):
-            if search_img_in_rect(item_path, slot, confidence=0.10):
+        for i in range(len(self.win.inventory_slots)):
+            if self.is_inv_slot_empty(i):
                 if verbose:
                     self.log_msg(f"Inventory slot {i+1} is empty.")
                 num_empty_slots += 1
@@ -1285,7 +1377,7 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
                 tween=pytweening.easeInOutQuad,
             )
             self.mouse.click()
-        pag.keyUp("shift", _pause=False) # Release shift after
+        pag.keyUp("shift", _pause=False)  # Release shift after
 
     # --- General Utilities ---
     def sleep_while_not_idle(self) -> None:
@@ -1967,52 +2059,81 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
     def get_hp(self) -> int:
         """Get our character's HP value.
 
+        Prefers the RuneColor Bridge plug-in's exact value when a bridge is attached
+        and its feed is fresh, falling back to reading the HP orb off the screen.
+
         Returns:
             int: The HP of the player, or -1 if the value couldn't be read.
         """
-        if hp := ocr.scrape_text(
-            self.win.hp_orb_text, ocr.PLAIN_11, [self.cp.bgr.GREEN, self.cp.bgr.RED]
-        ):
-            return int("".join(re.findall(r"\d", hp)))
-        return -1
+
+        def from_screen() -> int:
+            if hp := ocr.scrape_text(
+                self.win.hp_orb_text, ocr.PLAIN_11, [self.cp.bgr.GREEN, self.cp.bgr.RED]
+            ):
+                return int("".join(re.findall(r"\d", hp)))
+            return -1
+
+        return self._from_bridge(
+            lambda: self.bridge.hitpoints[0], from_screen, "hp", -1
+        )
 
     def get_prayer(self) -> int:
         """Get the Prayer points of the player.
 
+        Prefers the RuneColor Bridge plug-in's exact value when a bridge is attached
+        and its feed is fresh, falling back to reading the Prayer orb off the screen.
+
         Returns:
             int: The Prayer point of the player, or -1 if the value couldn't be read.
         """
-        if prayer := ocr.scrape_text(
-            self.win.prayer_orb_text, ocr.PLAIN_11, [self.cp.bgr.GREEN, self.cp.bgr.RED]
-        ):
-            return int("".join(re.findall(r"\d", prayer)))
-        return -1
+
+        def from_screen() -> int:
+            if prayer := ocr.scrape_text(
+                self.win.prayer_orb_text,
+                ocr.PLAIN_11,
+                [self.cp.bgr.GREEN, self.cp.bgr.RED],
+            ):
+                return int("".join(re.findall(r"\d", prayer)))
+            return -1
+
+        return self._from_bridge(
+            lambda: self.bridge.prayer[0], from_screen, "prayer", -1
+        )
 
     def get_run_energy(self) -> int:
         """Get the run energy of the player.
 
+        Prefers the RuneColor Bridge plug-in's exact value when a bridge is attached
+        and its feed is fresh, falling back to reading the run orb off the screen.
+
         Returns:
             int: The run energy the player, or -1 if the value couldn't be read.
         """
-        if energy := ocr.scrape_text(
-            self.win.run_orb_text,
-            ocr.PLAIN_11,
-            [
-                self.cp.bgr.ORB_TEXT_100_90,
-                self.cp.bgr.ORB_TEXT_90_80,
-                self.cp.bgr.ORB_TEXT_80_70,
-                self.cp.bgr.ORB_TEXT_70_60,
-                self.cp.bgr.ORB_TEXT_60_50,
-                self.cp.bgr.ORB_TEXT_50_40,
-                self.cp.bgr.ORB_TEXT_40_30,
-                self.cp.bgr.ORB_TEXT_30_20,
-                self.cp.bgr.ORB_TEXT_20_10,
-                self.cp.bgr.ORB_TEXT_10_0,
-            ],
-            exclude_chars=ocr.PROBLEMATIC_CHARS + ["O", "o", "l"],
-        ):
-            return int("".join(re.findall(r"\d", energy)))
-        return -1
+
+        def from_screen() -> int:
+            if energy := ocr.scrape_text(
+                self.win.run_orb_text,
+                ocr.PLAIN_11,
+                [
+                    self.cp.bgr.ORB_TEXT_100_90,
+                    self.cp.bgr.ORB_TEXT_90_80,
+                    self.cp.bgr.ORB_TEXT_80_70,
+                    self.cp.bgr.ORB_TEXT_70_60,
+                    self.cp.bgr.ORB_TEXT_60_50,
+                    self.cp.bgr.ORB_TEXT_50_40,
+                    self.cp.bgr.ORB_TEXT_40_30,
+                    self.cp.bgr.ORB_TEXT_30_20,
+                    self.cp.bgr.ORB_TEXT_20_10,
+                    self.cp.bgr.ORB_TEXT_10_0,
+                ],
+                exclude_chars=ocr.PROBLEMATIC_CHARS + ["O", "o", "l"],
+            ):
+                return int("".join(re.findall(r"\d", energy)))
+            return -1
+
+        return self._from_bridge(
+            lambda: self.bridge.run_energy, from_screen, "run energy", -1
+        )
 
     def get_special_energy(self) -> int:
         """Get the special attack energy of the player.
@@ -2102,20 +2223,62 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
 
         This could also be referred to as our characters tile coordinates.
 
+        Prefers the RuneColor Bridge plug-in's exact value when a bridge is attached
+        and its feed is fresh, falling back to OCR of the Grid Info overlay. Note that
+        inside an instance the plug-in reports instance-local coordinates rather than
+        true world coordinates.
+
         Returns:
             Tuple[int]: The x-position, y-position, and plane of our character's
                 current position in Gielinor, or (-1, -1, -1) if the coordinate could
                 not be read.
         """
-        x, y, plane = -1, -1, -1
-        if text := ocr.scrape_text(
-            rect=self.win.tile,
-            font=ocr.PLAIN_12,
-            colors=self.cp.bgr.WHITE,
-            exclude_chars=[char for char in ocr.PROBLEMATIC_CHARS if char != ","],
-        ):
-            x, y, plane = tuple(map(int, text.replace("Tile", "").split(",")))
-        return x, y, plane
+
+        def from_screen() -> Tuple[int]:
+            x, y, plane = -1, -1, -1
+            if text := ocr.scrape_text(
+                rect=self.win.tile,
+                font=ocr.PLAIN_12,
+                colors=self.cp.bgr.WHITE,
+                exclude_chars=[char for char in ocr.PROBLEMATIC_CHARS if char != ","],
+            ):
+                try:
+                    x, y, plane = tuple(map(int, text.replace("Tile", "").split(",")))
+                except ValueError:
+                    # A hover tooltip (e.g. an NPC name) can transiently overlap the
+                    # tile coordinate overlay, producing unparseable text. Treat this
+                    # the same as a failed read rather than raising.
+                    pass
+            return x, y, plane
+
+        return self._from_bridge(
+            lambda: self.bridge.world_point, from_screen, "world point", (-1, -1, -1)
+        )
+
+    def get_world_point_reliably(self, attempts: int = 6) -> Tuple[int]:
+        """Get our character's world point, retrying past a transient bad read.
+
+        A single read of the Grid Info overlay is not dependable. A hover tooltip
+        drawn over it, or a redraw caught mid-frame, is enough to make the text
+        unparseable, and `get_world_point` reports that the same way it reports a
+        missing overlay: with the (-1, -1, -1) sentinel. Callers that treat one
+        failed read as "no position available" silently skip whatever they meant to
+        do, so retry before believing it.
+
+        Args:
+            attempts (int, optional): How many reads to try before giving up.
+                Defaults to 6.
+
+        Returns:
+            Tuple[int]: The x-position, y-position, and plane of our character's
+                current position, or (-1, -1, -1) if every attempt failed.
+        """
+        for _ in range(attempts):
+            world_point = self.get_world_point()
+            if world_point[0] != -1:
+                return world_point
+            self.sleep(0.2, 0.4)
+        return -1, -1, -1
 
     def get_chunk_id(self) -> int:
         """Get our character's global chunk ID (i.e. global 8x8 square-title area).
@@ -2312,6 +2475,10 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
 
     def login(self) -> None:
         """Log into OSRS from the home splash."""
+        self.win.focus()
+        self.win.resize(
+            773, 534
+        )  # Match the size the login templates were captured at.
         self.log_msg("Logging in...")  # Click [Play Now] on the home splash.
         if not self.wait_for_img_then_click("play-now.png", folder="login"):
             self.wait_for_img_then_click("play-now-gray.png", folder="login")
@@ -2346,9 +2513,7 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         self.stop()
 
     def potentially_relog_with_delayed_login(
-        self,
-        prob: float = 0.01,
-        wait_time: int = 600
+        self, prob: float = 0.01, wait_time: int = 600
     ) -> bool:
         """Potentially log out, wait for a specified time, and then log back in.
 
@@ -2364,7 +2529,9 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
             self.log_msg("Logging out for a break...", overwrite=True)
             self.logout()
             for i in range(int(wait_time), 0, -1):
-                self.log_msg(f"Logged out. Logging back in {i} seconds...", overwrite=True)
+                self.log_msg(
+                    f"Logged out. Logging back in {i} seconds...", overwrite=True
+                )
                 time.sleep(1)
             self.log_msg("Logging back in...", overwrite=True)
             self.login()

@@ -197,22 +197,41 @@ class Bot(ABC):
             self.log_msg("Please finish configuring the bot before starting.")
 
     def __initialize_window(self):
-        """Focus and initialize the game window by identifying core UI elements."""
-        self.win.focus()
-        time.sleep(0.5)
-        try:
-            initialized_successfully = self.win.initialize()
-            if not initialized_successfully:
-                msg = (
-                    "Game window found, but the bot couldn't orient itself. Ensure"
-                    " the game displays the correct reference images to help the bot"
-                    " get started before trying again."
+        """Focus and initialize the game window by identifying core UI elements.
+
+        Retries a few times because `SetForegroundWindow` can silently fail to
+        bring the client to the front when called from a process that doesn't
+        already own the foreground (Windows' focus-stealing prevention), which
+        would otherwise cause a spurious initialization failure.
+        """
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            self.win.focus()
+            # Template matching is not scale-invariant, so a client window that has
+            # drifted to some other size than what the reference images were
+            # captured at will fail to match anything. Force a consistent size
+            # every time so this can't silently break again.
+            self.win.resize(773, 534)
+            time.sleep(0.5)
+            try:
+                if self.win.initialize():
+                    return True
+            except Exception as exc:
+                self.log_msg(f"Error during window initialization: {exc}")
+                return False
+            if attempt < max_attempts:
+                self.log_msg(
+                    f"Couldn't orient itself (attempt {attempt}/{max_attempts})."
+                    " Retrying..."
                 )
-                self.log_msg(msg)
-            return initialized_successfully
-        except Exception as exc:
-            self.log_msg(f"Error during window initialization: {exc}")
-            return False
+                time.sleep(1)
+        msg = (
+            "Game window found, but the bot couldn't orient itself. Ensure"
+            " the game displays the correct reference images to help the bot"
+            " get started before trying again."
+        )
+        self.log_msg(msg)
+        return False
 
     def stop(self) -> None:
         """Stop the bot."""
@@ -314,7 +333,37 @@ class Bot(ABC):
         if lo >= hi:
             self.log_msg("Lower bound must be less than upper bound to `sleep`.")
             raise ValueError
+        # Between actions is the one safe moment to re-measure: nothing is mid-click
+        # on a region that is about to be replaced.
+        self.remeasure_if_moved()
         time.sleep(rd.biased_trunc_norm_samp(lo, hi))
+
+    def remeasure_if_moved(self) -> bool:
+        """Re-locate the client's regions if the window has moved or been resized.
+
+        Every region is stored in absolute screen coordinates, measured when the bot
+        started, so dragging or resizing the client leaves them all pointing at the
+        wrong pixels. Checking costs one window-geometry lookup; the re-measure itself
+        only runs after a change. It does not force the window back to a set size,
+        because a resize here is the user's choice.
+
+        A failed re-measure, typically mid-drag, leaves the window marked as moved, so
+        the next call tries again rather than trusting stale regions.
+
+        Returns:
+            bool: True if the regions match the window now, False if re-measuring
+                failed.
+        """
+        try:
+            if not self.win.moved():
+                return True
+            self.log_msg("Client window moved or resized. Re-measuring its regions...")
+            return bool(self.win.initialize())
+        except Exception as exc:  # noqa: BLE001
+            # A closed client lands here too. `sleep` never raised before this check
+            # existed, and a housekeeping step must not start making it.
+            self.log_msg(f"Re-measuring the client window failed: {exc}")
+            return False
 
     def take_break(self, lo: int = 1, hi: int = 30, fancy: bool = False) -> None:
         """Take a break for a random amount of time.

@@ -181,3 +181,7 @@ cython_debug/
 # misc
 .vscode/
 notes.txt
+
+# RuneLite plugin build output
+plugin/build/
+plugin/.gradle/

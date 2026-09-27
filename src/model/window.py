@@ -43,6 +43,28 @@ class Window:
         self.window_title = window_title
         self.padding_top = padding_top
         self.padding_left = padding_left
+        # Where the client was when its regions were last measured. Regions are
+        # absolute screen coordinates, so they are only valid while this still holds.
+        self._measured_at: Optional[tuple] = None
+
+    def mark_measured(self) -> None:
+        """Record the client's current geometry as the one the regions were measured at.
+
+        Subclasses call this at the end of a successful `initialize`.
+        """
+        rect = self.rectangle()
+        self._measured_at = (rect.left, rect.top, rect.width, rect.height)
+
+    def moved(self) -> bool:
+        """Say whether the client has moved or resized since it was last measured.
+
+        A window that has never been measured counts as moved.
+
+        Returns:
+            bool: True if the regions no longer match the client's position.
+        """
+        rect = self.rectangle()
+        return (rect.left, rect.top, rect.width, rect.height) != self._measured_at
 
     @property
     def window(self) -> Optional[pywintypes.HANDLE]:

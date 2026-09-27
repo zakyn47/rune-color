@@ -1,0 +1,53 @@
+plugins {
+    id 'java'
+    id 'com.github.johnrengelman.shadow' version '7.1.2'
+}
+
+repositories {
+    mavenLocal()
+    maven { url = 'https://repo.runelite.net' }
+    mavenCentral()
+}
+
+// Pinned rather than 'latest.release': a build whose API surface changes
+// silently between runs is harder to debug than one that fails loudly with a
+// one-line bump. Raise this when RuneLite updates far enough to matter.
+def runeLiteVersion = '1.12.38'
+
+dependencies {
+    compileOnly group: 'net.runelite', name: 'client', version: runeLiteVersion
+
+    compileOnly 'org.projectlombok:lombok:1.18.30'
+    annotationProcessor 'org.projectlombok:lombok:1.18.30'
+
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.mockito:mockito-core:4.11.0'
+    testImplementation group: 'net.runelite', name: 'client', version: runeLiteVersion
+}
+
+group = 'com.runecolor'
+version = '1.0'
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.release.set(11)
+}
+
+tasks.named('test') {
+    testLogging {
+        events 'passed', 'skipped', 'failed'
+        exceptionFormat 'full'
+    }
+}
+
+shadowJar {
+    archiveFileName = "${rootProject.name}-${project.version}-all.jar"
+}
+
+tasks.register('loopback', JavaExec) {
+    group = 'verification'
+    description = 'Publishes one snapshot to the URL in -Purl, for the loopback test.'
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'com.runecolor.bridge.LoopbackMain'
+    args = [project.findProperty('url') ?: 'http://127.0.0.1:8099/api/snapshot/']
+}
