@@ -64,7 +64,7 @@ class Pathfinder:
         return []
 
     @staticmethod
-    def get_path_dax(p1: Point, p2: Point) -> List[Point]:
+    def get_path_dax(p1: Point, p2: Point, members: bool = False) -> List[Point]:
         """Retrieve a `WalkPath` object representing the shortest path to a destination.
 
         Note that the DAX service provides human-readable error snippets. They are
@@ -84,6 +84,8 @@ class Pathfinder:
         Args:
             p1 (Point): The start of the path to be calculated.
             p2 (Point): The destination point of the path to be calculated.
+            members (bool, optional): Whether the path may cross members-only areas.
+                Defaults to False, so a free-to-play account is never routed there.
 
         Returns:
             List[Point]: `WalkPath` object scraped from the JSON response from the
@@ -97,7 +99,7 @@ class Pathfinder:
         payload = {
             "start": {"x": p1.x, "y": p1.y, "z": 0},
             "end": {"x": p2.x, "y": p2.y, "z": 0},
-            "player": {"members": True},
+            "player": {"members": members},
         }
         try:
             if path_raw := Pathfinder.make_api_call(url, headers, payload)["path"]:

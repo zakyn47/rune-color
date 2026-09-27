@@ -24,6 +24,7 @@ class Walker:
         max_waypoint_dist: int = 10,
         max_horizon: int = 12,
         reset_zoom_each_embark: bool = True,
+        members: bool = False,
     ) -> None:
         """Initialize a `RuneLiteBot` so we may equip it to walk.
 
@@ -37,12 +38,15 @@ class Walker:
                 when walking between waypoints. Defaults to 12 tiles.
             reset_zoom_each_embark: (bool, optional). Whether to reset the minimap zoom
                 each time before setting out to travel a given path. Defaults to True.
+            members (bool, optional): Whether DAX paths may cross members-only areas.
+                Defaults to False.
         """
         self.DEST_SQUARE_SIDE_LENGTH = dest_square_side_length
         self.MAX_WAYPOINT_DIST = max_waypoint_dist
         self.MAX_HORIZON = max_horizon
         self.bot = rune_lite_bot
         self.reset_zoom_each_embark = reset_zoom_each_embark
+        self.members = members
         self.camera_angle = None
         self.position = None
 
@@ -284,8 +288,11 @@ class Walker:
         Returns:
             WalkPath: The shortest valid path between the two provided points.
         """
-        api = Pathfinder.get_path_dax if host == "dax" else Pathfinder.get_path_osrspf
-        if path_raw := api(p1, p2):
+        if host == "dax":
+            path_raw = Pathfinder.get_path_dax(p1, p2, members=self.members)
+        else:
+            path_raw = Pathfinder.get_path_osrspf(p1, p2)
+        if path_raw:
             return self.add_waypoints(path_raw)
         host_name = "DAX" if host == "dax" else "OSRSPathfinder"
         msg = f"{host_name} API request for shortest path failed ({p1} -> {p2})."
