@@ -80,7 +80,7 @@ Then copy `build/libs/runecolor-bridge-1.0-all.jar` to `~/.runelite/sideloaded-p
 and restart the client. The fixture `tests/fixtures/snapshot_v1.json` is shared by the
 Java and Python suites.
 
-**Unit tests** (41, no client needed):
+**Unit tests** (43, no client needed):
 
 ```bash
 venv/Scripts/python.exe -m unittest discover -s tests/unit -t .
