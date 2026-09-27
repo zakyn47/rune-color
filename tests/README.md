@@ -147,11 +147,11 @@ A test taken standing still only proves the two agree on numbers that never chan
 
 ```
 samples: 600  availability: 99.83%
-field                agree  disagree  ocr failed     rate
-hitpoints              598         0           1  100.00%
-prayer                 599         0           0  100.00%
-run_energy             597         0           2  100.00%
-world_point            580         0          19  100.00%
+field            agree  (later)  disagree  ocr failed     rate
+hitpoints          598        0         0           1  100.00%
+prayer             599        0         0           0  100.00%
+run_energy         597       14         0           2  100.00%
+world_point        580       11         0          19  100.00%
 ```
 
 - **`disagree` must be 0.** Each one prints with both values. A disagreement means the
@@ -159,6 +159,15 @@ world_point            580         0          19  100.00%
   distrust until proven otherwise.
 - **`availability` must be above 99%.** Lower means the feed is dropping, and a bot
   that falls back to OCR half the time gains nothing from the plugin.
+- **`(later)`** is the part of `agree` that needed the next snapshot. The plug-in
+  samples once per tick, but the screen redraws every frame and OCR takes a few
+  hundred milliseconds, so while you move the Grid Info tile can be up to two
+  squares past the last snapshot. Each screen read is therefore bracketed by the
+  snapshot before it and the first one from a later tick, and agrees if it lies
+  between them on the same plane. Non-zero is expected while running or
+  regenerating; standing still it must be an exact match.
+- **The window may move.** Each sample re-measures the client if it was dragged or
+  resized, and so does every bot between actions.
 - **`ocr failed`** counts samples where the *screen* read failed — a hover tooltip over
   the overlay, a redraw caught mid-frame. Those are excluded from the agreement rate
   because they measure the screen reader, not the bridge. A high count here is the

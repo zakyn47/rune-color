@@ -59,6 +59,9 @@ SENTINELS = {
 
 AVAILABILITY_FLOOR = 0.99
 
+# How long to wait for the snapshot after a screen read: two game ticks.
+NEXT_SNAPSHOT_TIMEOUT = 1.2
+
 
 def require_client() -> None:
     """Exit with a plain message if no RuneLite window is open.
@@ -145,11 +148,13 @@ def read_from_bridge(bridge: BridgeAPI) -> Optional[Dict]:
         bridge (BridgeAPI): The attached bridge.
 
     Returns:
-        Optional[Dict]: The four values, or None if the feed was not fresh.
+        Optional[Dict]: The four values and the tick they came from, or None if
+            the feed was not fresh.
     """
     if not bridge.is_fresh():
         return None
     return {
+        "tick": bridge.tick,
         "hitpoints": bridge.hitpoints[0],
         "prayer": bridge.prayer[0],
         "run_energy": bridge.run_energy,
@@ -157,36 +162,102 @@ def read_from_bridge(bridge: BridgeAPI) -> Optional[Dict]:
     }
 
 
+def read_next_from_bridge(bridge: BridgeAPI, after_tick: int) -> Optional[Dict]:
+    """Wait for the first snapshot from a later tick than `after_tick`, and read it.
+
+    Args:
+        bridge (BridgeAPI): The attached bridge.
+        after_tick (int): The tick the snapshot must come after.
+
+    Returns:
+        Optional[Dict]: As `read_from_bridge`, or None if no later snapshot arrived
+            within two ticks.
+    """
+    deadline = time.time() + NEXT_SNAPSHOT_TIMEOUT
+    while time.time() < deadline:
+        if (reading := read_from_bridge(bridge)) and reading["tick"] > after_tick:
+            return reading
+        time.sleep(0.05)
+    return None
+
+
+def between(seen, first, second) -> bool:
+    """Say whether a screen value lies between two snapshots, inclusive.
+
+    World points must also share a plane: a changed plane is a jump, not a step
+    anyone could be caught halfway through.
+
+    Args:
+        seen: The value read off the screen.
+        first: The value in the snapshot before the screen read.
+        second: The value in the first snapshot after it.
+
+    Returns:
+        bool: True if `seen` is `first`, `second`, or on the way between them.
+    """
+    if isinstance(seen, tuple):
+        if not (seen[2] == first[2] == second[2]):
+            return False
+        return all(
+            min(a, b) <= s <= max(a, b) for s, a, b in zip(seen[:2], first, second)
+        )
+    return min(first, second) <= seen <= max(first, second)
+
+
 def sample(bot: OSRSPowerChopper, bridge: BridgeAPI, stats: Dict) -> None:
     """Take one paired reading and fold it into the running totals.
 
-    The bridge is read first. Reading the screen takes long enough that a snapshot
-    fresh at the start of a sample can be stale by the end of it, which would look
-    like unavailability rather than the measurement delay it is.
+    The plug-in samples once per tick, but the screen is redrawn every frame and a
+    screenshot takes a few hundred milliseconds. While a value is changing, the
+    screen can therefore show something no snapshot ever held: a live run caught
+    the Grid Info tile two squares ahead of an unchanged snapshot while running. So
+    each screen read is bracketed by the snapshot before it and the first snapshot
+    of a later tick, and it agrees if it lies between the two, inclusive. Standing
+    still, that is an exact match. A wrong value -- another plane, swapped axes, a
+    tile off the path -- still falls outside. Matches that needed the later
+    snapshot are counted separately so the report shows how often the bracket
+    mattered.
+
+    The window is re-measured first if it moved, so dragging or resizing the client
+    mid-run does not turn every later read into an OCR failure.
+
+    Availability is judged on the first read alone. Reading the screen takes long
+    enough that a snapshot fresh at the start of a sample can be stale by the end of
+    it, which would look like unavailability rather than the measurement delay it is.
 
     Args:
         bot (OSRSPowerChopper): The bot to read through.
         bridge (BridgeAPI): The attached bridge.
         stats (Dict): The accumulating results, mutated in place.
     """
+    bot.remeasure_if_moved()
     stats["samples"] += 1
-    from_bridge = read_from_bridge(bridge)
-    if from_bridge is None:
+    before = read_from_bridge(bridge)
+    if before is None:
         stats["bridge_unavailable"] += 1
         return
     stats["bridge_available"] += 1
 
     from_screen = read_from_screen(bot)
+    after = read_next_from_bridge(bridge, before["tick"]) or before
     for field, sentinel in SENTINELS.items():
+        counts = stats["fields"][field]
         seen = from_screen[field]
-        pushed = from_bridge[field]
         if seen == sentinel:
-            stats["fields"][field]["ocr_failed"] += 1
-        elif seen == pushed:
-            stats["fields"][field]["agreements"] += 1
+            counts["ocr_failed"] += 1
+        elif seen == before[field]:
+            counts["agreements"] += 1
+        elif between(seen, before[field], after[field]):
+            counts["agreements"] += 1
+            counts["matched_later_tick"] += 1
         else:
-            stats["fields"][field]["disagreements"].append(
-                {"at": time.strftime("%H:%M:%S"), "bridge": pushed, "screen": seen}
+            counts["disagreements"].append(
+                {
+                    "at": time.strftime("%H:%M:%S"),
+                    "bridge": before[field],
+                    "bridge_after": after[field],
+                    "screen": seen,
+                }
             )
 
 
@@ -201,7 +272,12 @@ def new_stats() -> Dict:
         "bridge_available": 0,
         "bridge_unavailable": 0,
         "fields": {
-            field: {"agreements": 0, "ocr_failed": 0, "disagreements": []}
+            field: {
+                "agreements": 0,
+                "matched_later_tick": 0,
+                "ocr_failed": 0,
+                "disagreements": [],
+            }
             for field in SENTINELS
         },
     }
@@ -222,7 +298,10 @@ def summarize(stats: Dict) -> bool:
 
     print()
     print(f"samples: {stats['samples']}  availability: {availability:.2%}")
-    print(f"{'field':<14}{'agree':>8}{'disagree':>10}{'ocr failed':>12}{'rate':>9}")
+    print(
+        f"{'field':<14}{'agree':>8}{'(later)':>9}{'disagree':>10}"
+        f"{'ocr failed':>12}{'rate':>9}"
+    )
 
     total_disagreements = 0
     for field, counts in stats["fields"].items():
@@ -231,13 +310,16 @@ def summarize(stats: Dict) -> bool:
         total_disagreements += disagree
         compared = agree + disagree
         rate = f"{agree / compared:.2%}" if compared else "n/a"
-        print(f"{field:<14}{agree:>8}{disagree:>10}{counts['ocr_failed']:>12}{rate:>9}")
+        print(
+            f"{field:<14}{agree:>8}{counts['matched_later_tick']:>9}{disagree:>10}"
+            f"{counts['ocr_failed']:>12}{rate:>9}"
+        )
 
     for field, counts in stats["fields"].items():
         for entry in counts["disagreements"][:5]:
             print(
                 f"  [{field} @ {entry['at']}] bridge={entry['bridge']!r}"
-                f" screen={entry['screen']!r}"
+                f" then {entry['bridge_after']!r} screen={entry['screen']!r}"
             )
 
     passed = total_disagreements == 0 and availability >= AVAILABILITY_FLOOR
