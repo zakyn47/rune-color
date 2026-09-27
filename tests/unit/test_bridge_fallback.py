@@ -8,9 +8,11 @@ one, not a copy of it.
 import sys
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
+import model.runelite_bot as runelite_bot  # noqa: E402
 from model.runelite_bot import RuneLiteBot  # noqa: E402
 
 
@@ -54,6 +56,7 @@ class BridgeFallbackTest(unittest.TestCase):
         bot = FakeBot(None)
         self.assertEqual(bot._from_bridge(lambda: 42, lambda: 41, "hp", -1), 41)
 
+    @mock.patch.object(runelite_bot, "COMPARE_BRIDGE_WITH_OCR", True)
     def test_warns_when_the_two_disagree(self):
         bot = FakeBot(FakeBridge(fresh=True))
         bot._from_bridge(lambda: 42, lambda: 41, "hp", -1)
@@ -62,17 +65,20 @@ class BridgeFallbackTest(unittest.TestCase):
             f"expected a disagreement warning, got {bot.messages!r}",
         )
 
+    @mock.patch.object(runelite_bot, "COMPARE_BRIDGE_WITH_OCR", True)
     def test_does_not_warn_when_ocr_simply_failed(self):
         # A failed OCR read is the sentinel, not a disagreement worth reporting.
         bot = FakeBot(FakeBridge(fresh=True))
         bot._from_bridge(lambda: 42, lambda: -1, "hp", -1)
         self.assertEqual(bot.messages, [])
 
+    @mock.patch.object(runelite_bot, "COMPARE_BRIDGE_WITH_OCR", True)
     def test_does_not_warn_when_the_two_agree(self):
         bot = FakeBot(FakeBridge(fresh=True))
         bot._from_bridge(lambda: 42, lambda: 42, "hp", -1)
         self.assertEqual(bot.messages, [])
 
+    @mock.patch.object(runelite_bot, "COMPARE_BRIDGE_WITH_OCR", True)
     def test_survives_an_ocr_comparison_that_raises(self):
         bot = FakeBot(FakeBridge(fresh=True))
 
@@ -81,6 +87,17 @@ class BridgeFallbackTest(unittest.TestCase):
 
         # The comparison is diagnostics; it must never break the read it audits.
         self.assertEqual(bot._from_bridge(lambda: 42, explode, "hp", -1), 42)
+
+    @mock.patch.object(runelite_bot, "COMPARE_BRIDGE_WITH_OCR", False)
+    def test_skips_the_screen_entirely_once_comparison_is_off(self):
+        # With the comparison off, a fresh bridge read must not pay for an OCR read.
+        bot = FakeBot(FakeBridge(fresh=True))
+
+        def must_not_run():
+            raise AssertionError("OCR read while the bridge was fresh")
+
+        self.assertEqual(bot._from_bridge(lambda: 42, must_not_run, "hp", -1), 42)
+        self.assertEqual(bot.messages, [])
 
     def test_propagates_an_ocr_failure_when_the_bridge_is_absent(self):
         # With no bridge there is nothing to fall back from, so an OCR exception is

@@ -30,9 +30,10 @@ from utilities.geometry import Point, Rectangle, RuneLiteObject, cosine_similari
 from utilities.img_search import BOT_IMAGES, search_img_in_rect
 
 # Stage A measurement: check every fresh plug-in reading against the screen and log
-# any disagreement. Costs one OCR read per call, which is the price of finding out
-# the payload is right. Turn off once `tests/live_bridge.py` reports agreement.
-COMPARE_BRIDGE_WITH_OCR = True
+# any disagreement. Costs one OCR read per call. Off since `tests/live_bridge.py`
+# passed on a live client (135 samples, 0 disagreements); turn it back on to audit
+# the plug-in again, for example after a RuneLite API change.
+COMPARE_BRIDGE_WITH_OCR = False
 
 
 class RuneLiteBot(Bot, metaclass=ABCMeta):

@@ -173,8 +173,10 @@ world_point        580       11         0          19  100.00%
   because they measure the screen reader, not the bridge. A high count here is the
   original problem the bridge exists to solve, not a bridge fault.
 
-A passing run is what licenses turning `COMPARE_BRIDGE_WITH_OCR` off in
-`src/model/runelite_bot.py` and retiring the retry loop in `get_world_point_reliably`.
+A passing run is what licensed turning `COMPARE_BRIDGE_WITH_OCR` off in
+`src/model/runelite_bot.py`. Turn it back on to audit the plug-in again. The retry
+loop in `get_world_point_reliably` stays: the plug-in only loads in developer mode, so
+a client started normally still reads the overlay, and that path still needs it.
 
 ## The loopback test
 
