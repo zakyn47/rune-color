@@ -18,10 +18,20 @@ START_TIMEOUT = 5
 
 class OSRSPowerChopper(OSRSBot):
     def __init__(self):
-        bot_title = "Power Chopper"
+        bot_title = "Power Chopper & Firemaking"
         description = (
-            "Chop trees, get a full inventory of logs, burn them in a fire, then"
-            " repeat."
+            "Chop marked trees until the inventory is full, burn the logs, walk back"
+            " to the trees, and repeat.\n\n"
+            "Setup:\n"
+            "- Inventory: tinderbox in the 2nd slot, axe wielded or in the 1st slot,"
+            " everything else empty.\n"
+            "- Mark the trees cyan with RuneLite's Object Markers plug-in.\n"
+            "- World Location plug-in: turn on Tile Location.\n"
+            "- Stretched Mode off, Resizable - Classic layout.\n"
+            "- Disable screen dimmers such as Night Light.\n"
+            "- Start next to the trees, on ground where fires can be lit.\n"
+            "- Optional: the RuneColor Bridge plug-in (plugin/README.md) burns all"
+            " logs on one fire and tends it; without it, each log lights its own."
         )
         super().__init__(bot_title=bot_title, description=description)
         self.run_time = 60 * 10  # Measured in minutes (default 10 hours).
