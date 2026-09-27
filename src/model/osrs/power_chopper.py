@@ -272,9 +272,9 @@ class OSRSPowerChopper(OSRSBot):
         Args:
             log_slot (int): The inventory slot index of the log to burn.
             timeout (float, optional): Seconds to wait for the log to be consumed
-                before giving up. Defaults to 4, which is generous next to the half
-                second a successful light actually takes. A light either works almost
-                at once or not at all, so waiting longer only slows down the retry.
+                before giving up. Defaults to 4. A light usually lands within a
+                couple of seconds, but the game can retry it for longer; with the
+                plug-in, a light still under way at the timeout is waited out.
 
         Returns:
             bool: True if the log was consumed, False otherwise.
@@ -296,7 +296,12 @@ class OSRSPowerChopper(OSRSBot):
             if self.is_inv_slot_empty(log_slot) and self.is_inv_slot_empty(log_slot):
                 return True
             self.sleep(0.15, 0.3)
-        return False
+        # A light the game retries can outlast the timeout, and giving up on it
+        # sends the retry off to click a random tile while the fire catches.
+        if self.bridge is None or self.bridge.idle_for is None:
+            return False
+        self.wait_until_idle()
+        return self.is_inv_slot_empty(log_slot)
 
     def return_to_grove(self, world_point: Tuple[int, int, int]) -> bool:
         """Walk back to the world point our character started burning from.
@@ -373,9 +378,10 @@ class OSRSPowerChopper(OSRSBot):
         if self.find_fire() is not None:
             self.mouse.click()
             return True
-        if self.bridge is None or self.bridge.fire is None:
+        # Read once: a fire can burn out between two reads.
+        if self.bridge is None or (fire := self.bridge.fire) is None:
             return False
-        self.mouse.move_to(Point(*self.bridge.fire))
+        self.mouse.move_to(Point(*fire))
         if not self.get_mouseover_text(contains="more"):
             return False
         self.log_msg("The fire is covered. Choosing it from the right-click menu.")
@@ -398,6 +404,23 @@ class OSRSPowerChopper(OSRSBot):
         end_time = time.time() + timeout
         while time.time() < end_time:
             if self.bridge is None or (self.bridge.idle_for or 0) >= 2 * self.game_tick:
+                return
+            time.sleep(self.game_tick / 3)
+
+    def wait_for_fire(self, timeout: float = 10) -> None:
+        """Wait for the fire just lit to show up and our character to step off it.
+
+        Idle alone is not enough: the log leaves its slot a tick or two before the
+        lighting animation starts, so our character still reads idle then, with no
+        fire reported yet, and the next pass would light a second fire.
+
+        Args:
+            timeout (float, optional): Seconds to wait at most.
+        """
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            idle_for = self.bridge.idle_for or 0
+            if self.bridge.fire is not None and idle_for >= 2 * self.game_tick:
                 return
             time.sleep(self.game_tick / 3)
 
@@ -432,7 +455,10 @@ class OSRSPowerChopper(OSRSBot):
             if self.count_logs() < logs_before:
                 return True
             self.sleep(0.4, 0.6)
-        self.log_msg("Used the log on the fire, but it wasn't consumed.")
+        self.log_msg(
+            f"Used the log in slot {log_slot} on the fire, but it wasn't consumed"
+            f" ({logs_before} logs before, {self.count_logs()} now)."
+        )
         return False
 
     def tend_fire(self, timeout: float = 120) -> None:
@@ -479,10 +505,11 @@ class OSRSPowerChopper(OSRSBot):
         Returns:
             bool: True if tending started, i.e. a log was consumed.
         """
-        if self.bridge is None or self.bridge.fire is None:
+        # Read once: a fire can burn out between two reads.
+        if self.bridge is None or (fire := self.bridge.fire) is None:
             return False
         logs_before = self.count_logs()
-        self.mouse.move_to(Point(*self.bridge.fire))
+        self.mouse.move_to(Point(*fire))
         time.sleep(self.game_tick / 6)  # Let the mouseover text redraw.
         if not self.get_mouseover_text(contains="Tend"):
             return False
@@ -529,7 +556,7 @@ class OSRSPowerChopper(OSRSBot):
             failed = 0
             # A log used on the fire before lighting and the step off it are over
             # goes nowhere.
-            self.wait_until_idle()
+            self.wait_for_fire()
 
     def burn_one_fire_per_log(self, log_slots: List[int]) -> None:
         """Light a separate fire with every log, for when the plug-in isn't running.
