@@ -26,6 +26,7 @@ anything. Chopping 26 logs takes roughly 20-25 minutes, so `--minutes` under abo
 import argparse
 import json
 import sys
+import threading
 import time
 import traceback
 from pathlib import Path
@@ -35,6 +36,7 @@ sys.path.insert(0, str(Path(__file__).parents[1] / "src"))
 
 import pyautogui as pag  # noqa: E402
 
+import utilities.api.pathfinder as pathfinder  # noqa: E402
 from controller.bot_controller import MockBotController  # noqa: E402
 from model.bot import BotStatus  # noqa: E402
 from model.osrs.power_chopper import OSRSPowerChopper  # noqa: E402
@@ -59,6 +61,59 @@ def tile_distance(p1: WorldPoint, p2: WorldPoint) -> Optional[float]:
     return round(((p1[0] - p2[0]) ** 2 + (p1[1] - p2[1]) ** 2) ** 0.5, 1)
 
 
+def trace_bridge(bot: OSRSPowerChopper) -> None:
+    """Print every snapshot the plug-in sends, whenever its game values change.
+
+    The plug-in posts every tick, so printing each one would bury the output. Tick
+    and timestamp are left out of the comparison; everything else counts.
+
+    Args:
+        bot (OSRSPowerChopper): The bot whose attached bridge to watch.
+    """
+
+    def watch() -> None:
+        last = None
+        received = 0
+        last_tick = None
+        while True:
+            bridge = bot.bridge
+            snapshot = dict(bridge._snapshot) if bridge else {}
+            if snapshot and snapshot.get("tick") != last_tick:
+                received += 1
+                last_tick = snapshot.get("tick")
+                values = {
+                    k: v for k, v in snapshot.items() if k not in ("tick", "sent_at")
+                }
+                if values != last:
+                    last = values
+                    print(
+                        f"[bridge <- plug-in] #{received} tick={last_tick}"
+                        f" {json.dumps(snapshot, separators=(',', ':'))}",
+                        flush=True,
+                    )
+            time.sleep(0.1)
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
+def trace_pathfinder() -> None:
+    """Print every pathfinding request the walker sends, and what comes back."""
+    post = pathfinder.requests.post
+
+    def traced_post(url, *args, **kwargs):
+        print(f"[pathfinder -> ] POST {url} {kwargs.get('data')}", flush=True)
+        response = post(url, *args, **kwargs)
+        body = response.text
+        print(
+            f"[pathfinder <- ] {response.status_code}"
+            f" {body[:300]}{'...' if len(body) > 300 else ''}",
+            flush=True,
+        )
+        return response
+
+    pathfinder.requests.post = traced_post
+
+
 def park_cursor() -> None:
     """Move the cursor away from the corners of the screen.
 
@@ -71,11 +126,13 @@ def park_cursor() -> None:
     pag.FAILSAFE = True
 
 
-def build_bot(minutes: int) -> OSRSPowerChopper:
+def build_bot(minutes: int, bridge: bool = False) -> OSRSPowerChopper:
     """Create a Power Chopper wired to a UI-less controller and ready to play.
 
     Args:
         minutes (int): How long the bot should run for, in minutes.
+        bridge (bool, optional): Whether to read exact values from the RuneColor
+            Bridge plug-in. Defaults to False, which reads the screen.
 
     Returns:
         OSRSPowerChopper: The configured bot.
@@ -89,6 +146,8 @@ def build_bot(minutes: int) -> OSRSPowerChopper:
     bot.options_set = True
     bot.run_time = minutes
     bot.take_breaks = False
+    if bridge:
+        bot.attach_bridge()
 
     # Window regions only resolve once the game is rendered, so a failed initialize
     # means the client is sitting on the login splash rather than in game.
@@ -170,13 +229,17 @@ def instrument(bot: OSRSPowerChopper, stats: Dict) -> None:
     stats["_lights"] = lights
 
 
-def run_session(run_no: int, total: int, minutes: int) -> Dict:
+def run_session(
+    run_no: int, total: int, minutes: int, bridge: bool = False, trace: bool = False
+) -> Dict:
     """Run a single measured session and return what it observed.
 
     Args:
         run_no (int): The 1-based index of this session.
         total (int): How many sessions are being run in all.
         minutes (int): How long this session should run for, in minutes.
+        bridge (bool, optional): Whether to attach the RuneColor Bridge.
+        trace (bool, optional): Whether to print what the bridge receives.
 
     Returns:
         Dict: The recorded statistics for the session.
@@ -191,7 +254,9 @@ def run_session(run_no: int, total: int, minutes: int) -> Dict:
     }
     try:
         park_cursor()
-        bot = build_bot(minutes)
+        bot = build_bot(minutes, bridge)
+        if bridge and trace:
+            trace_bridge(bot)
         instrument(bot, stats)
         bot.play()
         if bot.thread is None:
@@ -242,11 +307,21 @@ def main() -> None:
         "--minutes", type=int, default=35, help="minutes per session (30+ to burn)"
     )
     parser.add_argument("--out", type=Path, default=Path("live_power_chopper.json"))
+    parser.add_argument(
+        "--bridge", action="store_true", help="read exact values from the plug-in"
+    )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="print plug-in snapshots and pathfinding requests as they happen",
+    )
     args = parser.parse_args()
+    if args.trace:
+        trace_pathfinder()
 
     results = []
     for run_no in range(1, args.runs + 1):
-        stats = run_session(run_no, args.runs, args.minutes)
+        stats = run_session(run_no, args.runs, args.minutes, args.bridge, args.trace)
         results.append(stats)
         print(f">>> RUN {run_no} SUMMARY: {json.dumps(stats)}", flush=True)
         args.out.write_text(json.dumps(results, indent=2))
