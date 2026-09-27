@@ -40,14 +40,13 @@ but not unset one, and an empty value is still non-null.
 Run the client directly instead, which sets no launcher version:
 
 ```powershell
-& "$env:LOCALAPPDATA\RuneLite\jrein\java.exe" `
-  -ea `
-  --add-opens=java.base/java.net=ALL-UNNAMED `
-  --add-opens=java.base/java.io=ALL-UNNAMED `
-  -Xmx768m -Xss2m -Dsun.java2d.d3d=true -Dsun.java2d.opengl=false `
-  -cp "$env:USERPROFILE\.runeliteepository2\*" `
-  net.runelite.client.RuneLite --developer-mode
+powershell -ExecutionPolicy Bypass -File plugin\run-dev.ps1
 ```
+
+The script starts the bundled JRE with `-ea` and `--developer-mode`. After a client
+update the launcher leaves the old jars in `~/.runelite/repository2` next to the new
+ones, so the script puts only the newest version of each on the classpath rather than
+a `*` that would load both.
 
 Confirm it worked by looking for this line in `~/.runelite/logs/client.log`:
 
@@ -55,12 +54,32 @@ Confirm it worked by looking for this line in `~/.runelite/logs/client.log`:
 INFO n.r.client.plugins.PluginManager - Side-loading plugin ...runecolor-bridge-1.0-all.jar
 ```
 
-**Jagex accounts collide with this.** A Jagex account authenticates using session
-values the Jagex Launcher injects into the client's environment, and the command above
-starts the client without them, so it cannot log in. Developer mode needs the launcher
-out of the way; a Jagex account needs it involved. Anyone hitting this has to relay
-those environment values into a direct launch, or test on an account that still uses a
-plain username and password.
+**Jagex accounts.** A Jagex account logs in with session values the Jagex Launcher
+passes to the client as environment variables (`JX_SESSION_ID`, `JX_CHARACTER_ID`,
+`JX_DISPLAY_NAME`, plus access and refresh tokens). A direct launch has none of them.
+RuneLite's answer is `--insecure-write-credentials`: a client started with it saves
+those values to `~/.runelite/credentials.properties`, and any later client, including
+a direct one, logs in from that file when the variables are absent.
+
+The flag has to reach a client the Jagex Launcher started, and the launcher forwards
+the `clientArguments` saved in `%LOCALAPPDATA%/RuneLite/settings.json` (the "Client arguments"
+field of RuneLite (configure)):
+
+```json
+{
+  "clientArguments": ["--insecure-write-credentials"]
+}
+```
+
+1. Save that setting.
+2. Start the game once from the Jagex Launcher, so the file is written.
+3. Close that client and run `run-dev.ps1`.
+
+If the direct launch stops logging in, the session has expired; repeat step 2.
+
+`credentials.properties` holds live session tokens. Never commit or share it. Delete
+it to revoke the session, and remove the flag once it is no longer needed so the
+launcher stops rewriting it.
 
 # Why there is no @Subscribe
 
