@@ -19,7 +19,8 @@ import logging
 import socket
 import threading
 import time
-from typing import Dict, Optional, Tuple, Union
+from dataclasses import dataclass
+from typing import Dict, List, Optional, Tuple, Union
 
 from flask import Flask, Response, jsonify, request
 from werkzeug.serving import make_server
@@ -35,6 +36,56 @@ DEFAULT_PORT = 8099
 
 _shared_lock = threading.Lock()
 _shared_instance = None
+
+Tile = Tuple[int, int, int]
+
+
+@dataclass(frozen=True)
+class Target:
+    """The NPC the player is fighting, as the plug-in last saw it.
+
+    `health_ratio` out of `health_scale` is the health bar as the game draws it, and
+    -1 while no bar is showing, which is not the same as zero health.
+    """
+
+    name: str
+    health_ratio: int
+    health_scale: int
+    tile: Optional[Tile]
+
+
+@dataclass(frozen=True)
+class GroundItem:
+    """An item on the ground near the player, with the screen point to take it."""
+
+    id: int
+    name: str
+    quantity: int
+    tile: Tile
+    point: Tuple[int, int]
+
+
+@dataclass(frozen=True)
+class Npc:
+    """An NPC near the player and on screen, with the screen point to click it.
+
+    `index` stays the same for one NPC from snapshot to snapshot, so a moving NPC
+    can be followed. `busy` means it is fighting someone other than the player.
+    """
+
+    index: int
+    name: str
+    level: int
+    tile: Tile
+    point: Tuple[int, int]
+    busy: bool
+
+
+def _tile(value: object) -> Optional[Tile]:
+    """Turn a `{x, y, plane}` mapping into a tuple, or None."""
+    if not isinstance(value, dict):
+        return None
+    return int(value["x"]), int(value["y"]), int(value["plane"])
 
 
 class BridgeAPI:
@@ -388,6 +439,76 @@ class BridgeAPI:
         if not isinstance(point, dict):
             return None
         return int(point["x"]), int(point["y"])
+
+    @property
+    def target(self) -> Optional[Target]:
+        """Optional[Target]: The NPC the player is fighting, or None.
+
+        None also when the feed is stale or the plug-in predates this field.
+        """
+        value = self._field("target", None)
+        if not isinstance(value, dict):
+            return None
+        return Target(
+            str(value.get("name")),
+            int(value.get("health_ratio", -1)),
+            int(value.get("health_scale", -1)),
+            _tile(value.get("tile")),
+        )
+
+    @property
+    def ground_items(self) -> List[GroundItem]:
+        """List[GroundItem]: Items near the player, nearest first.
+
+        Empty when there are none, when the feed is stale, or when the plug-in
+        predates this field.
+        """
+        values = self._field("ground_items", None)
+        if not isinstance(values, list):
+            return []
+        return [
+            GroundItem(
+                int(v["id"]),
+                str(v.get("name")),
+                int(v.get("quantity", 1)),
+                _tile(v["tile"]),
+                (int(v["x"]), int(v["y"])),
+            )
+            for v in values
+        ]
+
+    @property
+    def npcs(self) -> List[Npc]:
+        """List[Npc]: NPCs near the player and on screen, nearest first.
+
+        Empty when there are none, when the feed is stale, or when the plug-in
+        predates this field.
+        """
+        values = self._field("npcs", None)
+        if not isinstance(values, list):
+            return []
+        return [
+            Npc(
+                int(v["index"]),
+                str(v.get("name")),
+                int(v.get("level", 0)),
+                _tile(v["tile"]),
+                (int(v["x"]), int(v["y"])),
+                bool(v.get("busy", False)),
+            )
+            for v in values
+        ]
+
+    @property
+    def inventory(self) -> Optional[List[int]]:
+        """Optional[List[int]]: The item ID in each of the 28 slots, -1 when empty.
+
+        None when the feed is stale or the plug-in predates this field.
+        """
+        values = self._field("inventory", None)
+        if not isinstance(values, list):
+            return None
+        return [int(v) for v in values]
 
     @property
     def active_profile(self) -> Optional[str]:

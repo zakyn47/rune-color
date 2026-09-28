@@ -2,6 +2,8 @@ package com.runecolor.bridge;
 
 import com.google.gson.annotations.SerializedName;
 
+import java.util.List;
+
 /** An immutable, serializable picture of the player at one game tick. */
 public final class Snapshot {
     public final int schema;
@@ -53,9 +55,23 @@ public final class Snapshot {
     /** The name of the client's active RuneLite profile, or null if unknown. */
     public final String profile;
 
+    /** The NPC the player is fighting, or null. */
+    public final Target target;
+
+    /** Items on the ground near the player, nearest first, or null if unknown. */
+    @SerializedName("ground_items")
+    public final List<GroundItem> groundItems;
+
+    /** The item ID in each of the 28 inventory slots, -1 when empty, or null. */
+    public final List<Integer> inventory;
+
+    /** NPCs near the player and on screen, nearest first, or null if unknown. */
+    public final List<Npc> npcs;
+
     Snapshot(int schema, int tick, long sentAt, String gameState, Stat hitpoints,
              Stat prayer, Integer runEnergy, Point worldPoint, Integer animation,
-             Boolean idle, ScreenPoint fire, String profile) {
+             Boolean idle, ScreenPoint fire, String profile, Target target,
+             List<GroundItem> groundItems, List<Integer> inventory, List<Npc> npcs) {
         this.schema = schema;
         this.tick = tick;
         this.sentAt = sentAt;
@@ -68,6 +84,10 @@ public final class Snapshot {
         this.idle = idle;
         this.fire = fire;
         this.profile = profile;
+        this.target = target;
+        this.groundItems = groundItems;
+        this.inventory = inventory;
+        this.npcs = npcs;
     }
 
     /** A current and maximum pair, as the orbs show them. */
@@ -102,6 +122,74 @@ public final class Snapshot {
             this.x = x;
             this.y = y;
             this.plane = plane;
+        }
+    }
+
+    /** The NPC being fought: its health bar as the game draws it, and its tile. */
+    public static final class Target {
+        public final String name;
+
+        /** -1 while no health bar is showing. */
+        @SerializedName("health_ratio")
+        public final int healthRatio;
+
+        @SerializedName("health_scale")
+        public final int healthScale;
+
+        public final Point tile;
+
+        Target(String name, int healthRatio, int healthScale, Point tile) {
+            this.name = name;
+            this.healthRatio = healthRatio;
+            this.healthScale = healthScale;
+            this.tile = tile;
+        }
+    }
+
+    /** An item on the ground, with the screen point to click to take it. */
+    public static final class GroundItem {
+        public final int id;
+        public final String name;
+        public final int quantity;
+        public final Point tile;
+        public final int x;
+        public final int y;
+
+        GroundItem(int id, String name, int quantity, Point tile, int x, int y) {
+            this.id = id;
+            this.name = name;
+            this.quantity = quantity;
+            this.tile = tile;
+            this.x = x;
+            this.y = y;
+        }
+    }
+
+    /**
+     * An NPC near the player, with the screen point to click it.
+     *
+     * <p>The index identifies the same NPC from one snapshot to the next, so a
+     * moving NPC can be followed while the cursor travels to it.
+     */
+    public static final class Npc {
+        public final int index;
+        public final String name;
+        public final int level;
+        public final Point tile;
+        public final int x;
+        public final int y;
+
+        /** Whether it is fighting someone other than the player. */
+        public final boolean busy;
+
+        Npc(int index, String name, int level, Point tile, int x, int y, boolean busy) {
+            this.index = index;
+            this.name = name;
+            this.level = level;
+            this.tile = tile;
+            this.x = x;
+            this.y = y;
+            this.busy = busy;
         }
     }
 }

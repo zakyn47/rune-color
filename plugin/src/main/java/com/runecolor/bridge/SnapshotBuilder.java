@@ -5,14 +5,26 @@ import java.awt.IllegalComponentStateException;
 import java.awt.Rectangle;
 import java.awt.Shape;
 import net.runelite.api.Client;
+import net.runelite.api.Actor;
 import net.runelite.api.GameObject;
+import net.runelite.api.Item;
+import net.runelite.api.ItemComposition;
+import net.runelite.api.ItemContainer;
+import net.runelite.api.ItemLayer;
+import net.runelite.api.NPC;
 import net.runelite.api.ObjectComposition;
 import net.runelite.api.Player;
 import net.runelite.api.Scene;
 import net.runelite.api.Skill;
 import net.runelite.api.Tile;
+import net.runelite.api.TileItem;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.gameval.InventoryID;
+
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.List;
 
 /**
  * Turns the live client into an immutable {@link Snapshot}.
@@ -29,6 +41,21 @@ public final class SnapshotBuilder {
     /** How many tiles from the player to look for a fire. */
     static final int FIRE_RADIUS = 3;
 
+    /** How many tiles from the player to look for items on the ground. */
+    static final int GROUND_ITEM_RADIUS = 5;
+
+    /** The most ground items a snapshot carries, nearest first. */
+    static final int MAX_GROUND_ITEMS = 10;
+
+    /** How many tiles from the player to look for NPCs. */
+    static final int NPC_RADIUS = 10;
+
+    /** The most NPCs a snapshot carries, nearest first. */
+    static final int MAX_NPCS = 10;
+
+    static final int INVENTORY_SIZE = 28;
+    static final int EMPTY_SLOT = -1;
+
     private SnapshotBuilder() {
     }
 
@@ -44,7 +71,8 @@ public final class SnapshotBuilder {
         Player player = client.getLocalPlayer();
         if (player == null) {
             return new Snapshot(SCHEMA_VERSION, client.getTickCount(), nowMillis,
-                    gameState, null, null, null, null, null, null, null, profile);
+                    gameState, null, null, null, null, null, null, null, profile,
+                    null, null, inventory(client), null);
         }
 
         WorldPoint tile = player.getWorldLocation();
@@ -65,7 +93,11 @@ public final class SnapshotBuilder {
                 animation,
                 isIdle(player, animation),
                 nearestFire(client, player),
-                profile);
+                profile,
+                target(player),
+                groundItems(client, player),
+                inventory(client),
+                npcs(client, player));
     }
 
     /**
@@ -78,17 +110,11 @@ public final class SnapshotBuilder {
      *     {@link #FIRE_RADIUS} tiles or the canvas is not on screen
      */
     static Snapshot.ScreenPoint nearestFire(Client client, Player player) {
-        Canvas canvas = client.getCanvas();
+        java.awt.Point origin = canvasOrigin(client);
         LocalPoint here = player.getLocalLocation();
         Scene scene = client.getScene();
-        if (canvas == null || here == null || scene == null) {
+        if (origin == null || here == null || scene == null) {
             return null;
-        }
-        java.awt.Point origin;
-        try {
-            origin = canvas.getLocationOnScreen();
-        } catch (IllegalComponentStateException e) {
-            return null;  // Minimized, or not shown yet.
         }
         Tile[][] tiles = scene.getTiles()[client.getPlane()];
         int sceneX = here.getSceneX();
@@ -120,6 +146,156 @@ public final class SnapshotBuilder {
         return best == null
                 ? null
                 : new Snapshot.ScreenPoint(origin.x + best.getX(), origin.y + best.getY());
+    }
+
+    /** Where the canvas sits on the screen, or null when it is not showing. */
+    static java.awt.Point canvasOrigin(Client client) {
+        Canvas canvas = client.getCanvas();
+        if (canvas == null) {
+            return null;
+        }
+        try {
+            return canvas.getLocationOnScreen();
+        } catch (IllegalComponentStateException e) {
+            return null;  // Minimized, or not shown yet.
+        }
+    }
+
+    /** The NPC the player is interacting with, or null for none or a player. */
+    static Snapshot.Target target(Player player) {
+        Actor other = player.getInteracting();
+        if (!(other instanceof NPC)) {
+            return null;
+        }
+        WorldPoint tile = other.getWorldLocation();
+        return new Snapshot.Target(other.getName(), other.getHealthRatio(),
+                other.getHealthScale(), tile == null ? null : point(tile));
+    }
+
+    /** The item ID in each inventory slot, or null before the inventory loads. */
+    static List<Integer> inventory(Client client) {
+        ItemContainer container = client.getItemContainer(InventoryID.INV);
+        if (container == null) {
+            return null;
+        }
+        Item[] items = container.getItems();
+        List<Integer> ids = new ArrayList<>(INVENTORY_SIZE);
+        for (int slot = 0; slot < INVENTORY_SIZE; slot++) {
+            Item item = slot < items.length ? items[slot] : null;
+            boolean empty = item == null || item.getId() < 0 || item.getQuantity() <= 0;
+            ids.add(empty ? EMPTY_SLOT : item.getId());
+        }
+        return ids;
+    }
+
+    /**
+     * List the items on the ground near the player, nearest first.
+     *
+     * @return up to {@link #MAX_GROUND_ITEMS} items within {@link #GROUND_ITEM_RADIUS}
+     *     tiles, or null if the canvas is not on screen
+     */
+    static List<Snapshot.GroundItem> groundItems(Client client, Player player) {
+        java.awt.Point origin = canvasOrigin(client);
+        LocalPoint here = player.getLocalLocation();
+        Scene scene = client.getScene();
+        if (origin == null || here == null || scene == null) {
+            return null;
+        }
+        Tile[][] tiles = scene.getTiles()[client.getPlane()];
+        List<Nearby<Snapshot.GroundItem>> nearby = new ArrayList<>();
+        for (int dx = -GROUND_ITEM_RADIUS; dx <= GROUND_ITEM_RADIUS; dx++) {
+            for (int dy = -GROUND_ITEM_RADIUS; dy <= GROUND_ITEM_RADIUS; dy++) {
+                int x = here.getSceneX() + dx;
+                int y = here.getSceneY() + dy;
+                if (x < 0 || y < 0 || x >= tiles.length || y >= tiles[x].length
+                        || tiles[x][y] == null) {
+                    continue;
+                }
+                int distance = Math.max(Math.abs(dx), Math.abs(dy));
+                addItems(client, tiles[x][y], origin, distance, nearby);
+            }
+        }
+        return nearestFirst(nearby, MAX_GROUND_ITEMS);
+    }
+
+    /**
+     * List the NPCs near the player that are on screen, nearest first.
+     *
+     * @return up to {@link #MAX_NPCS} NPCs within {@link #NPC_RADIUS} tiles, or null
+     *     if the canvas is not on screen
+     */
+    static List<Snapshot.Npc> npcs(Client client, Player player) {
+        java.awt.Point origin = canvasOrigin(client);
+        WorldPoint here = player.getWorldLocation();
+        if (origin == null || here == null) {
+            return null;
+        }
+        List<Nearby<Snapshot.Npc>> nearby = new ArrayList<>();
+        for (NPC npc : client.getNpcs()) {
+            WorldPoint tile = npc == null ? null : npc.getWorldLocation();
+            Shape hull = npc == null ? null : npc.getConvexHull();
+            if (tile == null || hull == null || tile.getPlane() != here.getPlane()) {
+                continue;  // Gone, or off screen.
+            }
+            int distance = Math.max(Math.abs(tile.getX() - here.getX()),
+                    Math.abs(tile.getY() - here.getY()));
+            if (distance > NPC_RADIUS) {
+                continue;
+            }
+            Rectangle bounds = hull.getBounds();
+            Actor other = npc.getInteracting();
+            boolean busy = other != null && other != player;
+            nearby.add(new Nearby<>(distance, new Snapshot.Npc(npc.getIndex(),
+                    npc.getName(), npc.getCombatLevel(), point(tile),
+                    origin.x + (int) bounds.getCenterX(),
+                    origin.y + (int) bounds.getCenterY(), busy)));
+        }
+        return nearestFirst(nearby, MAX_NPCS);
+    }
+
+    private static <T> List<T> nearestFirst(List<Nearby<T>> nearby, int max) {
+        nearby.sort(Comparator.comparingInt(n -> n.distance));
+        List<T> nearest = new ArrayList<>();
+        for (Nearby<T> n : nearby.subList(0, Math.min(max, nearby.size()))) {
+            nearest.add(n.value);
+        }
+        return nearest;
+    }
+
+    private static void addItems(Client client, Tile tile, java.awt.Point origin,
+                                 int distance, List<Nearby<Snapshot.GroundItem>> into) {
+        List<TileItem> items = tile.getGroundItems();
+        ItemLayer layer = tile.getItemLayer();
+        net.runelite.api.Point canvasPoint = layer == null ? null : layer.getCanvasLocation();
+        if (items == null || canvasPoint == null) {
+            return;
+        }
+        for (TileItem item : items) {
+            into.add(new Nearby<>(distance, new Snapshot.GroundItem(item.getId(),
+                    itemName(client, item.getId()), item.getQuantity(),
+                    point(tile.getWorldLocation()),
+                    origin.x + canvasPoint.getX(), origin.y + canvasPoint.getY())));
+        }
+    }
+
+    private static String itemName(Client client, int id) {
+        ItemComposition composition = client.getItemDefinition(id);
+        return composition == null ? null : composition.getName();
+    }
+
+    private static Snapshot.Point point(WorldPoint tile) {
+        return new Snapshot.Point(tile.getX(), tile.getY(), tile.getPlane());
+    }
+
+    /** Something near the player, with its distance, for sorting. */
+    private static final class Nearby<T> {
+        final int distance;
+        final T value;
+
+        Nearby(int distance, T value) {
+            this.distance = distance;
+            this.value = value;
+        }
     }
 
     private static net.runelite.api.Point clickPoint(GameObject object) {
