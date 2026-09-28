@@ -8,3 +8,4 @@ from .wine_maker import OSRSWineMaker
 from .yew_banker import OSRSYewBanker
 from .multi_purposer import MultiPurposer
 from .cow_fighter import OSRSCowFighter
+from .power_miner import OSRSPowerMiner
