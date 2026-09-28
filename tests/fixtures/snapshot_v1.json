@@ -3,12 +3,94 @@
   "tick": 123456,
   "sent_at": 1757193600123,
   "game_state": "LOGGED_IN",
-  "hitpoints": { "current": 42, "max": 55 },
-  "prayer": { "current": 12, "max": 43 },
+  "hitpoints": {
+    "current": 42,
+    "max": 55
+  },
+  "prayer": {
+    "current": 12,
+    "max": 43
+  },
   "run_energy": 87,
-  "world_point": { "x": 3222, "y": 3218, "plane": 0 },
+  "world_point": {
+    "x": 3222,
+    "y": 3218,
+    "plane": 0
+  },
   "animation": 879,
   "idle": false,
-  "fire": { "x": 512, "y": 300 },
-  "profile": "RuneColor - Test"
+  "fire": {
+    "x": 512,
+    "y": 300
+  },
+  "profile": "RuneColor - Test",
+  "target": {
+    "name": "Goblin",
+    "health_ratio": 12,
+    "health_scale": 30,
+    "tile": {
+      "x": 3250,
+      "y": 3230,
+      "plane": 0
+    }
+  },
+  "ground_items": [
+    {
+      "id": 526,
+      "name": "Bones",
+      "quantity": 1,
+      "tile": {
+        "x": 3250,
+        "y": 3230,
+        "plane": 0
+      },
+      "x": 600,
+      "y": 410
+    }
+  ],
+  "inventory": [
+    995,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1,
+    -1
+  ],
+  "npcs": [
+    {
+      "index": 17,
+      "name": "Goblin",
+      "level": 2,
+      "tile": {
+        "x": 3251,
+        "y": 3231,
+        "plane": 0
+      },
+      "x": 640,
+      "y": 380,
+      "busy": false
+    }
+  ]
 }

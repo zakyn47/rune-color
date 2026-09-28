@@ -15,7 +15,12 @@ import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
-from utilities.api.bridge_api import BridgeAPI  # noqa: E402
+from utilities.api.bridge_api import (  # noqa: E402
+    BridgeAPI,
+    GroundItem,
+    Npc,
+    Target,
+)
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "snapshot_v1.json"
 
@@ -93,6 +98,43 @@ class BridgeAPITest(unittest.TestCase):
     def test_reports_no_active_profile_from_a_plugin_that_predates_it(self):
         self.post({k: v for k, v in payload().items() if k != "profile"})
         self.assertIsNone(self.bridge.active_profile)
+
+    def test_exposes_the_target_from_the_fixture(self):
+        self.post(payload())
+        self.assertEqual(self.bridge.target, Target("Goblin", 12, 30, (3250, 3230, 0)))
+
+    def test_reports_no_target_when_not_fighting(self):
+        self.post(dict(payload(), target=None))
+        self.assertIsNone(self.bridge.target)
+
+    def test_exposes_nearby_ground_items(self):
+        self.post(payload())
+        self.assertEqual(
+            self.bridge.ground_items,
+            [GroundItem(526, "Bones", 1, (3250, 3230, 0), (600, 410))],
+        )
+
+    def test_reports_no_ground_items_from_an_older_plugin(self):
+        self.post({k: v for k, v in payload().items() if k != "ground_items"})
+        self.assertEqual(self.bridge.ground_items, [])
+
+    def test_exposes_nearby_npcs(self):
+        self.post(payload())
+        self.assertEqual(
+            self.bridge.npcs,
+            [Npc(17, "Goblin", 2, (3251, 3231, 0), (640, 380), False)],
+        )
+
+    def test_reports_no_npcs_from_an_older_plugin(self):
+        self.post({k: v for k, v in payload().items() if k != "npcs"})
+        self.assertEqual(self.bridge.npcs, [])
+
+    def test_exposes_the_inventory(self):
+        self.post(payload())
+        self.assertEqual(self.bridge.inventory, [995] + [-1] * 27)
+
+    def test_reports_no_inventory_before_any_snapshot(self):
+        self.assertIsNone(self.bridge.inventory)
 
     def test_reports_unknown_idle_before_any_snapshot(self):
         self.assertIsNone(self.bridge.animation)

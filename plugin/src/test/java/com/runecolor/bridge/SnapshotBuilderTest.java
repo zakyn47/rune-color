@@ -2,8 +2,16 @@ package com.runecolor.bridge;
 
 import java.awt.Canvas;
 import java.awt.Rectangle;
+import java.awt.Shape;
 import net.runelite.api.Client;
 import net.runelite.api.GameObject;
+import net.runelite.api.Item;
+import net.runelite.api.ItemComposition;
+import net.runelite.api.ItemContainer;
+import net.runelite.api.ItemLayer;
+import net.runelite.api.NPC;
+import net.runelite.api.TileItem;
+import net.runelite.api.gameval.InventoryID;
 import net.runelite.api.ObjectComposition;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
@@ -14,6 +22,10 @@ import net.runelite.api.Skill;
 import net.runelite.api.coords.WorldPoint;
 import org.junit.Test;
 import org.mockito.Mockito;
+
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
@@ -260,5 +272,126 @@ public class SnapshotBuilderTest {
     public void carriesTheActiveProfile() {
         assertEquals("RuneColor - X",
                 SnapshotBuilder.build(loggedInClient(), 0L, "RuneColor - X").profile);
+    }
+
+    @Test
+    public void reportsTheNpcBeingFought() {
+        Player player = Mockito.mock(Player.class);
+        NPC goblin = Mockito.mock(NPC.class);
+        Mockito.when(goblin.getName()).thenReturn("Goblin");
+        Mockito.when(goblin.getHealthRatio()).thenReturn(0);
+        Mockito.when(goblin.getHealthScale()).thenReturn(30);
+        Mockito.when(goblin.getWorldLocation()).thenReturn(new WorldPoint(3250, 3230, 0));
+        Mockito.when(player.getInteracting()).thenReturn(goblin);
+
+        Snapshot.Target target = SnapshotBuilder.target(player);
+        assertEquals("Goblin", target.name);
+        assertEquals(0, target.healthRatio);
+        assertEquals(30, target.healthScale);
+        assertEquals(3250, target.tile.x);
+        assertEquals(3230, target.tile.y);
+    }
+
+    @Test
+    public void reportsNoTargetWhenNotFighting() {
+        assertNull(SnapshotBuilder.target(Mockito.mock(Player.class)));
+    }
+
+    @Test
+    public void listsTheInventoryWithEmptySlots() {
+        Client client = Mockito.mock(Client.class);
+        ItemContainer container = Mockito.mock(ItemContainer.class);
+        Mockito.when(container.getItems())
+                .thenReturn(new Item[] {new Item(526, 1), new Item(-1, 0)});
+        Mockito.when(client.getItemContainer(InventoryID.INV)).thenReturn(container);
+
+        List<Integer> inventory = SnapshotBuilder.inventory(client);
+        assertEquals(28, inventory.size());
+        assertEquals(Integer.valueOf(526), inventory.get(0));
+        assertEquals(Integer.valueOf(-1), inventory.get(1));
+        assertEquals(Integer.valueOf(-1), inventory.get(27));
+    }
+
+    @Test
+    public void reportsNoInventoryWhenItIsNotLoaded() {
+        assertNull(SnapshotBuilder.inventory(Mockito.mock(Client.class)));
+    }
+
+    private static Tile itemTile(Client client, int id, int quantity, String name,
+                                 WorldPoint world) {
+        Tile tile = Mockito.mock(Tile.class);
+        TileItem item = Mockito.mock(TileItem.class);
+        Mockito.when(item.getId()).thenReturn(id);
+        Mockito.when(item.getQuantity()).thenReturn(quantity);
+        Mockito.when(tile.getGroundItems()).thenReturn(Collections.singletonList(item));
+        ItemLayer layer = Mockito.mock(ItemLayer.class);
+        Mockito.when(layer.getCanvasLocation())
+                .thenReturn(new net.runelite.api.Point(100, 50));
+        Mockito.when(tile.getItemLayer()).thenReturn(layer);
+        Mockito.when(tile.getWorldLocation()).thenReturn(world);
+        ItemComposition composition = Mockito.mock(ItemComposition.class);
+        Mockito.when(composition.getName()).thenReturn(name);
+        Mockito.when(client.getItemDefinition(id)).thenReturn(composition);
+        return tile;
+    }
+
+    @Test
+    public void listsNearbyGroundItemsNearestFirst() {
+        Client client = Mockito.mock(Client.class);
+        Player player = Mockito.mock(Player.class);
+        Mockito.when(player.getLocalLocation()).thenReturn(LocalPoint.fromScene(50, 50));
+        Canvas canvas = Mockito.mock(Canvas.class);
+        Mockito.when(canvas.getLocationOnScreen()).thenReturn(new java.awt.Point(10, 20));
+        Mockito.when(client.getCanvas()).thenReturn(canvas);
+        Mockito.when(client.getPlane()).thenReturn(0);
+        Tile[][][] tiles = new Tile[1][104][104];
+        tiles[0][48][50] = itemTile(client, 995, 25, "Coins", new WorldPoint(3248, 3230, 0));
+        tiles[0][50][50] = itemTile(client, 526, 1, "Bones", new WorldPoint(3250, 3230, 0));
+        Scene scene = Mockito.mock(Scene.class);
+        Mockito.when(scene.getTiles()).thenReturn(tiles);
+        Mockito.when(client.getScene()).thenReturn(scene);
+
+        List<Snapshot.GroundItem> items = SnapshotBuilder.groundItems(client, player);
+        assertEquals(2, items.size());
+        assertEquals("Bones", items.get(0).name);
+        assertEquals("Coins", items.get(1).name);
+        assertEquals(25, items.get(1).quantity);
+        assertEquals(3248, items.get(1).tile.x);
+        assertEquals(110, items.get(0).x);
+        assertEquals(70, items.get(0).y);
+    }
+
+    private static NPC npc(int index, String name, WorldPoint tile, Shape hull) {
+        NPC npc = Mockito.mock(NPC.class);
+        Mockito.when(npc.getIndex()).thenReturn(index);
+        Mockito.when(npc.getName()).thenReturn(name);
+        Mockito.when(npc.getCombatLevel()).thenReturn(2);
+        Mockito.when(npc.getWorldLocation()).thenReturn(tile);
+        Mockito.when(npc.getConvexHull()).thenReturn(hull);
+        return npc;
+    }
+
+    @Test
+    public void listsOnScreenNpcsNearestFirstAndFlagsBusyOnes() {
+        Client client = Mockito.mock(Client.class);
+        Player player = Mockito.mock(Player.class);
+        Mockito.when(player.getWorldLocation()).thenReturn(new WorldPoint(3250, 3230, 0));
+        Canvas canvas = Mockito.mock(Canvas.class);
+        Mockito.when(canvas.getLocationOnScreen()).thenReturn(new java.awt.Point(10, 20));
+        Mockito.when(client.getCanvas()).thenReturn(canvas);
+        NPC far = npc(1, "Goblin", new WorldPoint(3254, 3230, 0), new Rectangle(90, 40, 20, 20));
+        NPC near = npc(2, "Goblin", new WorldPoint(3251, 3230, 0), new Rectangle(40, 40, 20, 20));
+        NPC offScreen = npc(3, "Goblin", new WorldPoint(3252, 3230, 0), null);
+        NPC tooFar = npc(4, "Goblin", new WorldPoint(3270, 3230, 0), new Rectangle(0, 0, 2, 2));
+        Mockito.when(near.getInteracting()).thenReturn(Mockito.mock(Player.class));
+        Mockito.when(client.getNpcs()).thenReturn(Arrays.asList(far, near, offScreen, tooFar));
+
+        List<Snapshot.Npc> npcs = SnapshotBuilder.npcs(client, player);
+        assertEquals(2, npcs.size());
+        assertEquals(2, npcs.get(0).index);
+        assertEquals(10 + 50, npcs.get(0).x);
+        assertEquals(20 + 50, npcs.get(0).y);
+        assertEquals(true, npcs.get(0).busy);
+        assertEquals(false, npcs.get(1).busy);
     }
 }

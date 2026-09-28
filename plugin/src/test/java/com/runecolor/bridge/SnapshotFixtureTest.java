@@ -5,6 +5,9 @@ import com.google.gson.JsonParser;
 import org.junit.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -24,7 +27,13 @@ public class SnapshotFixtureTest {
         Snapshot snapshot = new Snapshot(1, 123456, 1757193600123L, "LOGGED_IN",
                 new Snapshot.Stat(42, 55), new Snapshot.Stat(12, 43), 87,
                 new Snapshot.Point(3222, 3218, 0), 879, false,
-                new Snapshot.ScreenPoint(512, 300), "RuneColor - Test");
+                new Snapshot.ScreenPoint(512, 300), "RuneColor - Test",
+                new Snapshot.Target("Goblin", 12, 30, new Snapshot.Point(3250, 3230, 0)),
+                Collections.singletonList(new Snapshot.GroundItem(526, "Bones", 1,
+                        new Snapshot.Point(3250, 3230, 0), 600, 410)),
+                inventory(),
+                Collections.singletonList(new Snapshot.Npc(17, "Goblin", 2,
+                        new Snapshot.Point(3251, 3231, 0), 640, 380, false)));
 
         Path fixture = Paths.get("..", "tests", "fixtures", "snapshot_v1.json");
         String expected = new String(Files.readAllBytes(fixture), StandardCharsets.UTF_8);
@@ -34,5 +43,11 @@ public class SnapshotFixtureTest {
         JsonParser parser = new JsonParser();
         assertEquals(parser.parse(expected),
                 parser.parse(new Gson().toJson(snapshot)));
+    }
+
+    private static List<Integer> inventory() {
+        List<Integer> ids = new ArrayList<>(Collections.nCopies(28, -1));
+        ids.set(0, 995);
+        return ids;
     }
 }
