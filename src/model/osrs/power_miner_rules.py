@@ -3,6 +3,9 @@
 from typing import List, Optional
 
 TIN_ORE = 438
+# Uncut sapphire, emerald, ruby and diamond: the gems mining can give.
+GEMS = frozenset({1623, 1621, 1619, 1617})
+DROPPED = GEMS | {TIN_ORE}
 EMPTY = -1
 
 
@@ -17,6 +20,11 @@ def ore_slots(inventory: Optional[List[int]], ore: int = TIN_ORE) -> List[int]:
         List[int]: The slot indices.
     """
     return [slot for slot, item in enumerate(inventory or []) if item == ore]
+
+
+def drop_slots(inventory: Optional[List[int]]) -> List[int]:
+    """Return the inventory slots holding tin ore or a gem, lowest first."""
+    return [slot for slot, item in enumerate(inventory or []) if item in DROPPED]
 
 
 def is_full(inventory: Optional[List[int]]) -> bool:

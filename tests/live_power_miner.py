@@ -4,8 +4,9 @@ This is a live test, not a unit test. It needs RuneLite running in developer mod
 with the RuneColor Bridge plug-in, and it moves the real mouse. Start in the
 Lumbridge Swamp mine with shift-click dropping turned on.
 
-The pass criterion is checked against the game: every non-tin item in the
-inventory (from the plug-in) must still be there at the end.
+The pass criterion is checked against the game: every item the bot must not drop
+(anything but tin ore and uncut gems) that was in the inventory at the start, as
+the plug-in reports it, must still be there at the end.
 
 Usage:
     python tests/live_power_miner.py [--minutes M]
@@ -40,8 +41,10 @@ def switch_profile(bot: OSRSPowerMiner, timeout: float = 20) -> bool:
 
 
 def kept_items(inventory) -> Counter:
-    """Count everything that isn't tin ore or an empty slot."""
-    return Counter(i for i in inventory or [] if i not in (rules.TIN_ORE, rules.EMPTY))
+    """Count everything the bot must never drop."""
+    return Counter(
+        i for i in inventory or [] if i not in rules.DROPPED and i != rules.EMPTY
+    )
 
 
 def main() -> None:
@@ -85,13 +88,18 @@ def main() -> None:
     print("\n" + "=" * 60 + "\nSUMMARY\n" + "=" * 60, flush=True)
     print(f"  tin ore mined   : {bot.ores_mined}", flush=True)
     print(f"  tin ore dropped : {bot.ores_dropped}", flush=True)
+    print(f"  gems dropped    : {bot.gems_dropped}", flush=True)
     print(f"  inventory before: {before}", flush=True)
     print(f"  inventory after : {after}", flush=True)
     if after is None:
         print("  other items kept: unknown (logged out, no inventory)", flush=True)
         return
-    kept = kept_items(before) == kept_items(after)
-    print(f"  other items kept: {'PASS' if kept else 'FAIL'}", flush=True)
+    # Mining can add items along the way (a clue geode, say), so only what was
+    # there at the start has to still be there.
+    lost = kept_items(before) - kept_items(after)
+    gained = kept_items(after) - kept_items(before)
+    print(f"  new other items : {dict(gained) or 'none'}", flush=True)
+    print(f"  other items kept: {'FAIL ' + str(dict(lost)) if lost else 'PASS'}")
 
 
 if __name__ == "__main__":

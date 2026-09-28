@@ -13,6 +13,7 @@ from utilities import runelite_profiles  # noqa: E402
 
 TIN = rules.TIN_ORE
 PICKAXE = 1265
+SAPPHIRE = 1623
 EMPTY = [-1] * 28
 
 
@@ -28,6 +29,10 @@ class RulesTest(unittest.TestCase):
     def test_full_only_without_empty_slots(self):
         self.assertTrue(rules.is_full([TIN] * 28))
         self.assertFalse(rules.is_full([TIN] * 27 + [-1]))
+
+    def test_drop_slots_cover_tin_and_every_gem(self):
+        inventory = [PICKAXE, TIN, 1623, 1621, 1619, 1617, 23442] + [-1] * 21
+        self.assertEqual(rules.drop_slots(inventory), [1, 2, 3, 4, 5])
 
     def test_drop_order_follows_the_traversal(self):
         self.assertEqual(rules.drop_order([1, 4, 5], [5, 0, 1, 2, 4]), [5, 1, 4])
@@ -68,6 +73,7 @@ class FakeMiner:
         self.win = SimpleNamespace(game_view=None)
         self.ores_mined = 0
         self.ores_dropped = 0
+        self.gems_dropped = 0
         self.dropped_slots = []
 
     def find_colors(self, rect, colors):
@@ -125,6 +131,19 @@ class DropTest(unittest.TestCase):
         self.assertEqual(bot.bridge.inventory[0], PICKAXE)
         self.assertEqual(bot.bridge.inventory[27], 995)
         self.assertEqual(bot.ores_dropped, 26)
+
+    def test_drops_gems_with_the_ore(self):
+        inventory = [PICKAXE, TIN, SAPPHIRE, 23442, TIN] + [-1] * 23
+        bot = FakeMiner(FakeBridge(inventory))
+        self.assertTrue(bot.drop_ore())
+        self.assertEqual(bot.dropped_slots, [1, 2, 4])
+        self.assertEqual(bot.bridge.inventory[3], 23442)
+        self.assertEqual((bot.ores_dropped, bot.gems_dropped), (2, 1))
+
+    def test_a_gem_alone_is_still_dropped(self):
+        bot = FakeMiner(FakeBridge([PICKAXE] * 27 + [SAPPHIRE]))
+        self.assertTrue(bot.drop_ore())
+        self.assertEqual(bot.gems_dropped, 1)
 
     def test_nothing_to_drop_reports_failure(self):
         bot = FakeMiner(FakeBridge([PICKAXE] * 28))
