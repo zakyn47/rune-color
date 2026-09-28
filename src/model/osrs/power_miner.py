@@ -26,7 +26,7 @@ class OSRSPowerMiner(OSRSBot):
         bot_title = "Power Miner"
         description = (
             "Mine cyan-marked tin rocks until the inventory is full, drop the tin ore"
-            " (and nothing else), and repeat.\n\n"
+            " and uncut gems (and nothing else), and repeat.\n\n"
             "Setup:\n"
             "- Stand in the Lumbridge Swamp mine, south of Lumbridge.\n"
             "- A pickaxe wielded or in the inventory.\n"
@@ -42,6 +42,7 @@ class OSRSPowerMiner(OSRSBot):
         self.mark_color = self.cp.hsv.CYAN_MARK
         self.ores_mined = 0
         self.ores_dropped = 0
+        self.gems_dropped = 0
 
     def create_options(self) -> None:
         """Add bot options. See `utilities.options_builder` for more."""
@@ -91,7 +92,7 @@ class OSRSPowerMiner(OSRSBot):
                 self.potentially_take_a_break()
             if rules.is_full(self.bridge.inventory) and not self.drop_ore():
                 self.logout_and_stop_script(
-                    "The inventory is full and holds no tin ore to drop."
+                    "The inventory is full and holds no tin ore or gems to drop."
                 )
                 return
             if not self.mine_until_found():
@@ -100,7 +101,10 @@ class OSRSPowerMiner(OSRSBot):
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
         self.update_progress(1)
-        self.log_msg(f"Mined {self.ores_mined} tin ore, dropped {self.ores_dropped}.")
+        self.log_msg(
+            f"Mined {self.ores_mined} tin ore, dropped {self.ores_dropped} ore and"
+            f" {self.gems_dropped} gems."
+        )
         self.logout_and_stop_script("[END]")
 
     def mine_until_found(self) -> bool:
@@ -152,24 +156,31 @@ class OSRSPowerMiner(OSRSBot):
         return True
 
     def drop_ore(self) -> bool:
-        """Shift-click drop every tin ore, leaving everything else alone.
+        """Shift-click drop every tin ore and gem, leaving everything else alone.
 
         Returns:
-            bool: True if any tin ore was dropped.
+            bool: True if anything was dropped.
         """
         slots = rules.drop_order(
-            rules.ore_slots(self.bridge.inventory), self.get_inv_drop_traversal_path()
+            rules.drop_slots(self.bridge.inventory), self.get_inv_drop_traversal_path()
         )
         if not slots:
             return False
+        ores_before = self._ore_count()
         self.drop_items(slots, verbose=False)
         self._wait_until(
-            lambda: self.bridge.inventory is not None and self._ore_count() == 0,
+            lambda: self.bridge.inventory is not None
+            and not rules.drop_slots(self.bridge.inventory),
             DROP_TIMEOUT,
         )
-        dropped = len(slots) - self._ore_count()
-        self.ores_dropped += dropped
-        self.log_msg(f"Dropped {dropped} tin ore ({self.ores_dropped} so far).")
+        dropped = len(slots) - len(rules.drop_slots(self.bridge.inventory))
+        ores = ores_before - self._ore_count()
+        self.ores_dropped += ores
+        self.gems_dropped += dropped - ores
+        self.log_msg(
+            f"Dropped {ores} tin ore and {dropped - ores} gems"
+            f" ({self.ores_dropped} ore, {self.gems_dropped} gems so far)."
+        )
         return dropped > 0
 
     def _ore_count(self) -> int:
