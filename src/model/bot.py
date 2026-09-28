@@ -105,6 +105,9 @@ class Bot(ABC):
 
     mouse = Mouse()
     options_set: bool = True
+    # The script's RuneLite profile in `src/profiles/`, or None to leave the client's
+    # profile alone.
+    runelite_profile: Optional[str] = None
     progress: float = 0
     status = BotStatus.STOPPED
     thread: BotThread = None
@@ -180,7 +183,9 @@ class Bot(ABC):
                 self.log_msg("Options not set. Please set options before starting.")
                 return
             try:
-                if not self.__initialize_window():
+                if not self.__initialize_window() and not (
+                    self.enter_game() and self.__initialize_window()
+                ):
                     self.stop()
                     return
             except Exception as exc:
@@ -195,6 +200,14 @@ class Bot(ABC):
             self.log_msg("Bot is running.")
         elif self.status == BotStatus.CONFIGURING:
             self.log_msg("Please finish configuring the bot before starting.")
+
+    def enter_game(self) -> bool:
+        """Get the client from a start screen into the game, if the bot knows how.
+
+        Returns:
+            bool: True if something was tried, so orienting is worth another go.
+        """
+        return False
 
     def __initialize_window(self):
         """Focus and initialize the game window by identifying core UI elements.
