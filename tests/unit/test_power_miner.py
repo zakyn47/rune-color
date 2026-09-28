@@ -111,6 +111,18 @@ class MineTest(unittest.TestCase):
         self.assertTrue(bot.mine())
         self.assertEqual(bot.ores_mined, 1)
 
+    def test_counts_the_first_ore_into_an_empty_inventory(self):
+        # The game never sends an empty inventory, so the plug-in has none to report.
+        bridge = FakeBridge(EMPTY)
+        bridge.inventory = None
+
+        def ore_arrives():
+            bridge.inventory = [TIN] + [-1] * 27
+
+        bot = FakeMiner(bridge, on_click=ore_arrives)
+        self.assertTrue(bot.mine())
+        self.assertEqual(bot.ores_mined, 1)
+
     def test_no_marked_rock_means_no_click(self):
         bot = FakeMiner(FakeBridge(EMPTY), rocks=0)
         self.assertFalse(bot.mine())

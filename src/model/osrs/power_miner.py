@@ -6,7 +6,7 @@ import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
 from utilities.geometry import RuneLiteObject
 
-BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in's first inventory.
+BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in to be heard from.
 # How long a click on a rock has to set us walking or mining.
 START_TIMEOUT = 5
 # Three ticks idle means the rock is gone: someone else took it, or it never gave.
@@ -73,8 +73,10 @@ class OSRSPowerMiner(OSRSBot):
 
     def main_loop(self) -> None:
         """Mine and drop until the run time is up."""
+        # Not the inventory: the game never sends an empty one, so the plug-in
+        # reports none until the first ore arrives.
         if not self._wait_until(
-            lambda: self.bridge is not None and self.bridge.inventory is not None,
+            lambda: self.bridge is not None and self.bridge.game_state,
             BRIDGE_TIMEOUT,
         ):
             self.log_msg(
