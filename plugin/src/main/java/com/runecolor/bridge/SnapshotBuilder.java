@@ -33,6 +33,10 @@ public final class SnapshotBuilder {
     }
 
     public static Snapshot build(Client client, long nowMillis) {
+        return build(client, nowMillis, null);
+    }
+
+    public static Snapshot build(Client client, long nowMillis, String profile) {
         String gameState = client.getGameState() == null
                 ? "UNKNOWN"
                 : client.getGameState().toString();
@@ -40,7 +44,7 @@ public final class SnapshotBuilder {
         Player player = client.getLocalPlayer();
         if (player == null) {
             return new Snapshot(SCHEMA_VERSION, client.getTickCount(), nowMillis,
-                    gameState, null, null, null, null, null, null, null);
+                    gameState, null, null, null, null, null, null, null, profile);
         }
 
         WorldPoint tile = player.getWorldLocation();
@@ -60,7 +64,8 @@ public final class SnapshotBuilder {
                         : new Snapshot.Point(tile.getX(), tile.getY(), tile.getPlane()),
                 animation,
                 isIdle(player, animation),
-                nearestFire(client, player));
+                nearestFire(client, player),
+                profile);
     }
 
     /**

@@ -13,6 +13,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Consumer;
 
 /**
  * Serializes snapshots and POSTs them to the bot.
@@ -33,6 +34,7 @@ public class SnapshotPublisher {
     private final OkHttpClient http;
     private final Gson gson;
     private final String url;
+    private final Consumer<String> onReply;
     private final ArrayBlockingQueue<Runnable> queue = new ArrayBlockingQueue<>(1);
     private final ThreadPoolExecutor executor;
     private final AtomicBoolean failureLogged = new AtomicBoolean(false);
@@ -46,9 +48,15 @@ public class SnapshotPublisher {
     private final AtomicInteger failureLogCallCount = new AtomicInteger(0);
 
     public SnapshotPublisher(OkHttpClient http, Gson gson, String url) {
+        this(http, gson, url, body -> { });
+    }
+
+    public SnapshotPublisher(OkHttpClient http, Gson gson, String url,
+                             Consumer<String> onReply) {
         this.http = http;
         this.gson = gson;
         this.url = url;
+        this.onReply = onReply;
         this.executor = new ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, queue,
                 runnable -> {
                     Thread thread = new Thread(runnable, "runecolor-bridge-publisher");
@@ -101,6 +109,7 @@ public class SnapshotPublisher {
             try (Response response = http.newCall(request).execute()) {
                 if (response.isSuccessful()) {
                     failureLogged.set(false);
+                    handReply(response);
                 } else {
                     logFailureOnce("Bot rejected a snapshot: HTTP " + response.code(),
                             null);
@@ -108,6 +117,15 @@ public class SnapshotPublisher {
             }
         } catch (Exception e) {
             logFailureOnce("Could not reach the bot", e);
+        }
+    }
+
+    private void handReply(Response response) {
+        // The reply's reader must not be able to stop snapshots from flowing.
+        try {
+            onReply.accept(response.body() == null ? "" : response.body().string());
+        } catch (Exception e) {
+            log.debug("Ignored a reply: {}", e.toString());
         }
     }
 

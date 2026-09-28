@@ -19,9 +19,9 @@ import logging
 import socket
 import threading
 import time
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
-from flask import Flask, request
+from flask import Flask, Response, jsonify, request
 from werkzeug.serving import make_server
 
 log = logging.getLogger(__name__)
@@ -87,6 +87,10 @@ class BridgeAPI:
         # When the current unbroken run of idle snapshots began, or None if the last
         # snapshot was busy or carried no idle flag at all.
         self._idle_since: Optional[float] = None
+        # The profile the plug-in should switch the client to, as the reply to every
+        # snapshot states it. A stated wish rather than a one-off command, so a reply
+        # that goes astray is simply corrected by the next one.
+        self._wanted_profile: Optional[Dict[str, str]] = None
         self._disabled = False
         self._lock = threading.Lock()
         self._server = None
@@ -97,11 +101,12 @@ class BridgeAPI:
         werkzeug_log.disabled = not verbose
 
         @self.app.route("/api/snapshot/", methods=["POST"])
-        def handle_snapshot() -> Tuple[str, int]:
+        def handle_snapshot() -> Tuple[Union[str, Response], int]:
             """Store the pushed snapshot and stamp its arrival time.
 
             Returns:
-                Tuple[str, int]: Informational message and HTTP status code.
+                Tuple: The JSON reply naming the wanted profile, or an informational
+                    message on a rejected snapshot, and the HTTP status code.
             """
             if self._disabled:
                 return "Bridge disabled by a schema mismatch.", 409
@@ -122,7 +127,8 @@ class BridgeAPI:
                     self._idle_since = None
                 elif self._idle_since is None:
                     self._idle_since = self._arrived_at
-            return "Snapshot received.", 200
+                wanted = self._wanted_profile
+            return jsonify(profile=wanted), 200
 
         if start:
             self._serve()
@@ -257,6 +263,21 @@ class BridgeAPI:
         """
         self.fallback_count += 1
 
+    def request_profile(self, name: str, path: str) -> None:
+        """Ask the plug-in to switch the client to a RuneLite profile.
+
+        Args:
+            name (str): The profile's name inside RuneLite.
+            path (str): The absolute path of the `.properties` file to import.
+        """
+        with self._lock:
+            self._wanted_profile = {"name": name, "path": path}
+
+    def clear_profile(self) -> None:
+        """Stop asking for a profile. The client stays on whichever it has."""
+        with self._lock:
+            self._wanted_profile = None
+
     def _field(self, name: str, sentinel):
         """Return a field of the freshest snapshot, or a sentinel.
 
@@ -367,6 +388,15 @@ class BridgeAPI:
         if not isinstance(point, dict):
             return None
         return int(point["x"]), int(point["y"])
+
+    @property
+    def active_profile(self) -> Optional[str]:
+        """Optional[str]: The name of the client's active RuneLite profile, or None.
+
+        None if the feed is stale or the plug-in predates this field.
+        """
+        value = self._field("profile", None)
+        return None if value is None else str(value)
 
     @property
     def game_state(self) -> str:
