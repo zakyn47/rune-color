@@ -6,11 +6,13 @@ import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
+import net.runelite.client.config.ProfileManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
 import okhttp3.OkHttpClient;
 
 import javax.inject.Inject;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
@@ -50,7 +52,15 @@ public class RuneColorBridgePlugin extends Plugin {
     @Inject
     private RuneColorBridgeConfig config;
 
+    @Inject
+    private ConfigManager configManager;
+
+    @Inject
+    private ProfileManager profileManager;
+
     private SnapshotPublisher publisher;
+    private ExecutorService profileExecutor;
+    private volatile ProfileStore profileStore;
     private ScheduledExecutorService timer;
     private int cycle;
 
@@ -68,8 +78,17 @@ public class RuneColorBridgePlugin extends Plugin {
                 .readTimeout(500, TimeUnit.MILLISECONDS)
                 .writeTimeout(500, TimeUnit.MILLISECONDS)
                 .build();
-        publisher = new SnapshotPublisher(http, new Gson(),
-                "http://127.0.0.1:" + config.port() + "/api/snapshot/");
+        Gson gson = new Gson();
+        profileExecutor = Executors.newSingleThreadExecutor(runnable -> {
+            Thread thread = new Thread(runnable, "runecolor-bridge-profiles");
+            thread.setDaemon(true);
+            return thread;
+        });
+        profileStore = new RuneLiteProfileStore(profileManager, configManager);
+        ProfileSwitcher switcher = new ProfileSwitcher(profileStore, profileExecutor, gson);
+        publisher = new SnapshotPublisher(http, gson,
+                "http://127.0.0.1:" + config.port() + "/api/snapshot/",
+                switcher::onReply);
         cycle = 0;
 
         timer = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -90,6 +109,13 @@ public class RuneColorBridgePlugin extends Plugin {
         if (publisher != null) {
             publisher.close();
             publisher = null;
+        }
+        if (profileExecutor != null) {
+            // shutdown, not shutdownNow: a profile switch can restart plug-ins, this
+            // one included, and interrupting it halfway would leave the profile
+            // half-applied.
+            profileExecutor.shutdown();
+            profileExecutor = null;
         }
         log.info("RuneColor Bridge stopped.");
     }
@@ -114,7 +140,7 @@ public class RuneColorBridgePlugin extends Plugin {
                     SnapshotPublisher current = publisher;
                     if (current != null) {
                         current.publish(SnapshotBuilder.build(
-                                client, System.currentTimeMillis()));
+                                client, System.currentTimeMillis(), activeProfileName()));
                     }
                 } catch (Exception e) {
                     log.warn("Skipped a snapshot: {}", e.toString());
@@ -123,5 +149,10 @@ public class RuneColorBridgePlugin extends Plugin {
         } catch (Exception e) {
             log.warn("Snapshot timer stumbled: {}", e.toString());
         }
+    }
+
+    private String activeProfileName() {
+        ProfileStore store = profileStore;
+        return store == null ? null : store.activeName();
     }
 }
