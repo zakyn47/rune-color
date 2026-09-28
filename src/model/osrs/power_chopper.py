@@ -17,6 +17,8 @@ START_TIMEOUT = 5
 
 
 class OSRSPowerChopper(OSRSBot):
+    runelite_profile = "power_chopper"
+
     def __init__(self):
         bot_title = "Power Chopper & Firemaking"
         description = (

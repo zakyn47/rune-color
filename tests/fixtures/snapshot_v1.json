@@ -9,5 +9,6 @@
   "world_point": { "x": 3222, "y": 3218, "plane": 0 },
   "animation": 879,
   "idle": false,
-  "fire": { "x": 512, "y": 300 }
+  "fire": { "x": 512, "y": 300 },
+  "profile": "RuneColor - Test"
 }

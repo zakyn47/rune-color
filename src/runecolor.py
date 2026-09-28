@@ -13,7 +13,9 @@ from runecolor_version import __version__
 
 import utilities.settings as settings
 from controller.bot_controller import BotController, MockBotController
+from controller.profile_selector import ProfileSelector
 from model import Bot, RuneLiteBot
+from utilities.api.bridge_api import BridgeAPI
 from views import BotView, HomeView, TitleView
 from views.fonts import fonts as fnt
 
@@ -333,6 +335,19 @@ class App(ctk.CTk):
         self.views["Script"] = BotView(parent=self.frame_right)
         self.controller = BotController(model=None, view=self.views["Script"])
         self.views["Script"].set_controller(self.controller)
+        try:
+            self.controller.bridge = BridgeAPI.shared()
+        except OSError as exc:
+            # A live test harness may already hold the port. The UI still works,
+            # but scripts then read the screen and profiles are left alone.
+            print(f"RuneColor Bridge not started: {exc}")
+            return
+        self.controller.profiles = ProfileSelector(
+            self.controller.bridge,
+            settings.get,
+            settings.set,
+            self.controller.update_log,
+        )
 
     def _create_frame_left(self) -> None:
         """Create and configure the Left-hand Sidebar (`frame_left`)."""

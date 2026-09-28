@@ -66,6 +66,34 @@ class BridgeAPITest(unittest.TestCase):
         self.post(dict(payload(), fire=None))
         self.assertIsNone(self.bridge.fire)
 
+    def test_replies_with_no_profile_by_default(self):
+        self.assertEqual(self.post(payload()).get_json(), {"profile": None})
+
+    def test_replies_with_the_requested_profile(self):
+        self.bridge.request_profile("RuneColor - X", "C:/profiles/x.properties")
+        reply = self.post(payload()).get_json()
+        self.assertEqual(
+            reply,
+            {"profile": {"name": "RuneColor - X", "path": "C:/profiles/x.properties"}},
+        )
+
+    def test_a_cleared_profile_is_no_longer_requested(self):
+        self.bridge.request_profile("RuneColor - X", "C:/profiles/x.properties")
+        self.bridge.clear_profile()
+        self.assertEqual(self.post(payload()).get_json(), {"profile": None})
+
+    def test_exposes_the_active_profile(self):
+        self.post(dict(payload(), profile="RuneColor - X"))
+        self.assertEqual(self.bridge.active_profile, "RuneColor - X")
+
+    def test_exposes_the_fixtures_active_profile(self):
+        self.post(payload())
+        self.assertEqual(self.bridge.active_profile, "RuneColor - Test")
+
+    def test_reports_no_active_profile_from_a_plugin_that_predates_it(self):
+        self.post({k: v for k, v in payload().items() if k != "profile"})
+        self.assertIsNone(self.bridge.active_profile)
+
     def test_reports_unknown_idle_before_any_snapshot(self):
         self.assertIsNone(self.bridge.animation)
         self.assertIsNone(self.bridge.idle)

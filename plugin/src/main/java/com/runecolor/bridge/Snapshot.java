@@ -50,9 +50,12 @@ public final class Snapshot {
      */
     public final ScreenPoint fire;
 
+    /** The name of the client's active RuneLite profile, or null if unknown. */
+    public final String profile;
+
     Snapshot(int schema, int tick, long sentAt, String gameState, Stat hitpoints,
              Stat prayer, Integer runEnergy, Point worldPoint, Integer animation,
-             Boolean idle, ScreenPoint fire) {
+             Boolean idle, ScreenPoint fire, String profile) {
         this.schema = schema;
         this.tick = tick;
         this.sentAt = sentAt;
@@ -64,6 +67,7 @@ public final class Snapshot {
         this.animation = animation;
         this.idle = idle;
         this.fire = fire;
+        this.profile = profile;
     }
 
     /** A current and maximum pair, as the orbs show them. */

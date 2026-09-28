@@ -29,7 +29,7 @@ public class SnapshotPublisherTest {
     private static Snapshot sample() {
         return new Snapshot(1, 5, 99L, "LOGGED_IN",
                 new Snapshot.Stat(42, 55), new Snapshot.Stat(12, 43), 87,
-                new Snapshot.Point(3222, 3218, 0), 879, false, null);
+                new Snapshot.Point(3222, 3218, 0), 879, false, null, null);
     }
 
     @Test
@@ -236,5 +236,27 @@ public class SnapshotPublisherTest {
         assertEquals("the failure should have been logged once",
                 1, publisher.failureLogCallCount());
         publisher.close();
+    }
+
+    @Test
+    public void handsTheReplyBodyToItsHandler() throws Exception {
+        BlockingQueue<String> replies = new ArrayBlockingQueue<>(1);
+        Interceptor reply = chain -> new Response.Builder()
+                .request(chain.request())
+                .protocol(Protocol.HTTP_1_1)
+                .code(200)
+                .message("OK")
+                .body(ResponseBody.create(MediaType.get("application/json"),
+                        "{\"profile\":null}"))
+                .build();
+        SnapshotPublisher publisher = new SnapshotPublisher(
+                new OkHttpClient.Builder().addInterceptor(reply).build(), new Gson(),
+                "http://127.0.0.1:1/api/snapshot/", replies::offer);
+        try {
+            publisher.publish(sample());
+            assertEquals("{\"profile\":null}", replies.poll(2, TimeUnit.SECONDS));
+        } finally {
+            publisher.close();
+        }
     }
 }

@@ -10,6 +10,9 @@ from utilities.walker import Walker, WalkPath
 
 
 class OSRSYewBanker(OSRSPowerChopper, OSRSBot):
+    # It subclasses the chopper only for its methods, not its RuneLite profile.
+    runelite_profile = None
+
     def __init__(self) -> None:
         bot_title = "not ready"
         description = (

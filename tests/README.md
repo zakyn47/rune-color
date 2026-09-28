@@ -14,7 +14,8 @@ client and an account, and they take real time to run.
 The client has to be set up correctly or the tests measure nothing useful. The
 required RuneLite configuration is committed as
 [`src/rscolorprofile.properties`](../src/rscolorprofile.properties) — importing
-that profile is the quickest way to get all of the below at once.
+that profile is the quickest way to get all of the below at once. Scripts with their own profile in `src/profiles/` load it automatically when
+selected in the UI; see `plugin/README.md`, "Script profiles".
 
 | Requirement | Why it matters |
 | --- | --- |

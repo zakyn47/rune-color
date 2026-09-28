@@ -98,14 +98,19 @@ class Window:
         In other words, make the game client the active window.
 
         Raises:
-            WindowInitializationError: If the game client window cannot be focused.
+            WindowInitializationError: If no game client window can be found.
         """
         if client := self.window:
             try:
                 client.activate()
-            except pywintypes.error as exc:
-                msg = f"Failed to focus the game client window: {exc}"
-                raise WindowInitializationError(msg)
+            except pywintypes.error:
+                pass  # Windows refused; the fallback below still brings it forward.
+            if not client.isActive:
+                # Focus-stealing prevention blocks SetForegroundWindow for a process
+                # that doesn't own the foreground, but a window restored from
+                # minimized is always brought to the front.
+                client.minimize()
+                client.restore()
 
     def position(self) -> Optional[Point]:
         """Get the origin (i.e. left-top corner) of the client window.

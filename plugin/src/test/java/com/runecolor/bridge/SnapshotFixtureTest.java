@@ -24,7 +24,7 @@ public class SnapshotFixtureTest {
         Snapshot snapshot = new Snapshot(1, 123456, 1757193600123L, "LOGGED_IN",
                 new Snapshot.Stat(42, 55), new Snapshot.Stat(12, 43), 87,
                 new Snapshot.Point(3222, 3218, 0), 879, false,
-                new Snapshot.ScreenPoint(512, 300));
+                new Snapshot.ScreenPoint(512, 300), "RuneColor - Test");
 
         Path fixture = Paths.get("..", "tests", "fixtures", "snapshot_v1.json");
         String expected = new String(Files.readAllBytes(fixture), StandardCharsets.UTF_8);

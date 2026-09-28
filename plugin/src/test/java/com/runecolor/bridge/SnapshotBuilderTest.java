@@ -255,4 +255,10 @@ public class SnapshotBuilderTest {
         assertEquals(20, snapshot.prayer.max);
         assertEquals(Integer.valueOf(50), snapshot.runEnergy);
     }
+
+    @Test
+    public void carriesTheActiveProfile() {
+        assertEquals("RuneColor - X",
+                SnapshotBuilder.build(loggedInClient(), 0L, "RuneColor - X").profile);
+    }
 }

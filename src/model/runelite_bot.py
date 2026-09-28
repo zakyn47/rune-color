@@ -2503,6 +2503,23 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         self.log_msg("Mouse is in position. Ready to play.", overwrite=True)
         self.log_msg("Logged in.")
 
+    def enter_game(self) -> bool:
+        """Log in when the bot couldn't orient itself because it isn't in game.
+
+        The plug-in's game state keeps a client that is in game, but set up wrongly,
+        from waiting a minute for a Play Now button that will never appear. Without
+        a fresh game state, logging in is the likelier fix and is worth the try.
+
+        Returns:
+            bool: True if a login was attempted, so orienting is worth retrying.
+        """
+        if self.bridge is not None and self.bridge.game_state == "LOGGED_IN":
+            return False
+        self.log_msg("Not in game. Logging in first...")
+        self.login()
+        time.sleep(3)  # The game view settles a moment after the login lands.
+        return True
+
     def relog(self) -> None:
         """Log out of OSRS and then log back in again.
 

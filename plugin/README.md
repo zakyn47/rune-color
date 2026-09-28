@@ -152,3 +152,20 @@ Unverified note above).
 `1.12.38` in `build.gradle` rather than tracking `latest.release`, so the API the
 plugin compiles against cannot change under you without a visible one-line edit. Bump
 that version deliberately.
+
+## Script profiles
+
+Each script can ship a RuneLite profile in `src/profiles/<script>.properties` and
+name it with `runelite_profile = "<script>"` on its class. When the script is
+selected in the UI, the bot asks the plug-in for it in its reply to every snapshot,
+and the plug-in imports the file into a profile called "RuneColor - <script title>"
+and switches to it. Ticking "Use my own RuneLite profile" stops the requests.
+
+To capture a profile, copy the active one from `~/.runelite/profiles2/` without the
+window geometry, so loading it never resizes the client:
+
+    grep -v -E '^runelite\.(clientBounds|clientMaximized)=' "<active>.properties" > src/profiles/<script>.properties
+
+The profile must keep `runelite.runecolorbridgeplugin=true`: switching profiles also
+switches plug-ins, and without it the switch turns the bridge off.
+`tests/unit/test_runelite_profiles.py` checks both rules.
