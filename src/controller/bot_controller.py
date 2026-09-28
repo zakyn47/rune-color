@@ -8,6 +8,7 @@ from customtkinter import CTkFrame
 from customtkinter.windows.ctk_toplevel import CTkToplevel
 
 from model.bot import Bot, BotStatus
+from model.runelite_bot import RuneLiteBot
 from views.bot_view import BotView
 
 
@@ -32,6 +33,10 @@ class BotController:
         """
         self.model = model
         self.view = view
+        # Set by the app once the bridge is up. None means the port was taken, and
+        # scripts then read the screen only.
+        self.bridge = None
+        self.profiles = None
 
     def play(self) -> None:
         """Launch the `Bot` in response to the Play button being left-clicked.
@@ -152,9 +157,22 @@ class BotController:
                 title=model.bot_title, description=model.description
             )
             self.view.frame_info.start_keyboard_listener()
+            if self.bridge is not None and isinstance(model, RuneLiteBot):
+                model.attach_bridge()
         else:
             self.view.frame_info.setup(title="", description="")
         self.clear_log()
+        if self.profiles is not None:
+            self.profiles.select(self.model)
+
+    def set_use_own_profile(self, value: bool) -> None:
+        """Keep the user's own RuneLite profile, or go back to the script's.
+
+        Args:
+            value (bool): True to keep the user's own profile.
+        """
+        if self.profiles is not None:
+            self.profiles.set_use_own(value)
 
 
 class MockBotController:

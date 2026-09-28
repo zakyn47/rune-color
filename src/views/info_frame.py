@@ -7,6 +7,7 @@ from PIL import Image, ImageTk
 from pynput import keyboard
 
 import utilities.settings as settings
+from utilities.runelite_profiles import USE_OWN_PROFILE_SETTING
 from views.fonts import fonts as fnt
 
 if TYPE_CHECKING:
@@ -54,6 +55,7 @@ class InfoFrame(ctk.CTkFrame):
         self._setup_grid()
         self._create_script_title_text()
         self._create_description_text()
+        self._create_profile_checkbox()
         self._create_percentage_progress_text()
         self._create_script_progressbar()
         self._load_control_buttons()
@@ -95,6 +97,18 @@ class InfoFrame(ctk.CTkFrame):
                 wraplength=self.lbl_script_desc.winfo_width() - 10
             ),
         )
+
+    def _create_profile_checkbox(self) -> None:
+        """Create the opt-out from the script's own RuneLite profile."""
+        self.chk_own_profile = ctk.CTkCheckBox(
+            master=self,
+            text="Use my own RuneLite profile",
+            font=fnt.body_med_font(),
+            command=self.__on_own_profile_toggled,
+        )
+        if settings.get(USE_OWN_PROFILE_SETTING):
+            self.chk_own_profile.select()
+        self.chk_own_profile.grid(column=0, row=3, sticky="w", padx=20, pady=(5, 0))
 
     def _create_percentage_progress_text(self) -> None:
         """Create a label for script progress as a percentage."""
@@ -227,6 +241,10 @@ class InfoFrame(ctk.CTkFrame):
         self.lbl_status.configure(text="Status: Idle")
 
     # --- Button Handlers ---
+    def __on_own_profile_toggled(self) -> None:
+        """Tell the controller whether to keep the user's own RuneLite profile."""
+        self.controller.set_use_own_profile(bool(self.chk_own_profile.get()))
+
     def __on_play_btn_clicked(self) -> None:
         """Press play on the `BotController`."""
         self.controller.play()
