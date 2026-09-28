@@ -21,6 +21,15 @@ class RuneLiteProfilesTest(unittest.TestCase):
         path = runelite_profiles.profile_path(OSRSPowerChopper.runelite_profile)
         self.assertTrue(path.is_file(), path)
 
+    def test_the_cow_profile_tags_cows_and_shows_their_loot(self):
+        path = runelite_profiles.profile_path("cow_fighter")
+        lines = path.read_text(encoding="utf-8").splitlines()
+        self.assertIn("npcindicators.npcToHighlight=Cow", lines)
+        self.assertIn("npcindicators.highlightColor=-16711681", lines)
+        hidden = next(line for line in lines if line.startswith("grounditems.hidden"))
+        self.assertNotIn("Coins", hidden)
+        self.assertNotIn("Bones", hidden)
+
     def test_names_profiles_after_the_script(self):
         self.assertEqual(
             runelite_profiles.profile_name("Power Chopper & Firemaking"),
