@@ -2514,10 +2514,30 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
             bool: True if a login was attempted, so orienting is worth retrying.
         """
         if self.bridge is not None and self.bridge.game_state == "LOGGED_IN":
-            return False
+            return self.click_through_welcome_screen()
         self.log_msg("Not in game. Logging in first...")
         self.login()
         time.sleep(3)  # The game view settles a moment after the login lands.
+        return True
+
+    def click_through_welcome_screen(self) -> bool:
+        """Click "Click here to play" if the welcome screen is up.
+
+        The game already reports LOGGED_IN while the welcome screen covers the
+        game view, so a login that stops there looks like a badly set up client.
+
+        Returns:
+            bool: True if the button was clicked, so orienting is worth retrying.
+        """
+        button = search_img_in_rect(
+            BOT_IMAGES / "login" / "click-here-to-play.png", self.win.rectangle()
+        )
+        if not button:
+            return False
+        self.log_msg("Clicking through the welcome screen...")
+        self.mouse.move_to(button.random_point())
+        self.mouse.click()
+        time.sleep(3)  # The game view settles a moment after the click lands.
         return True
 
     def relog(self) -> None:

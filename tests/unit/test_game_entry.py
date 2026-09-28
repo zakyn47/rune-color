@@ -62,15 +62,23 @@ class FocusTest(unittest.TestCase):
 class FakeBot:
     enter_game = RuneLiteBot.enter_game
 
-    def __init__(self, game_state):
+    def __init__(self, game_state, welcome_screen=False):
         self.bridge = (
             None if game_state is None else SimpleNamespace(game_state=game_state)
         )
+        self.welcome_screen = welcome_screen
         self.logins = 0
+        self.welcome_clicks = 0
         self.messages = []
 
     def login(self):
         self.logins += 1
+
+    def click_through_welcome_screen(self):
+        if not self.welcome_screen:
+            return False
+        self.welcome_clicks += 1
+        return True
 
     def log_msg(self, msg, overwrite=False):
         self.messages.append(msg)
@@ -93,6 +101,11 @@ class EnterGameTest(unittest.TestCase):
         bot = FakeBot("LOGGED_IN")
         self.assertIs(bot.enter_game(), False)
         self.assertEqual(bot.logins, 0)
+
+    def test_clicks_through_the_welcome_screen_without_logging_in(self):
+        bot = FakeBot("LOGGED_IN", welcome_screen=True)
+        self.assertIs(bot.enter_game(), True)
+        self.assertEqual((bot.welcome_clicks, bot.logins), (1, 0))
 
     def test_logs_in_when_the_bridge_cannot_tell(self):
         bot = FakeBot(None)
