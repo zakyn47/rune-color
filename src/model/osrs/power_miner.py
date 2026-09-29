@@ -13,7 +13,7 @@ START_TIMEOUT = 5
 IDLE_SECONDS = 1.8
 MINE_TIMEOUT = 30
 DROP_TIMEOUT = 5
-# Tin respawns in a few seconds, so a mine with every rock depleted is normal.
+# Tin and iron respawn in a few seconds, so a mine with every rock depleted is normal.
 # Only this long without a single marked rock means we are somewhere else.
 SEARCH_TIMEOUT = 60
 CAMERA_EVERY = 5  # Failed searches between camera turns.
@@ -25,12 +25,14 @@ class OSRSPowerMiner(OSRSBot):
     def __init__(self) -> None:
         bot_title = "Power Miner"
         description = (
-            "Mine cyan-marked tin rocks until the inventory is full, drop the tin ore"
-            " and uncut gems (and nothing else), and repeat.\n\n"
+            "Mine cyan-marked tin or iron rocks until the inventory is full, drop"
+            " that ore and uncut gems (and nothing else), and repeat.\n\n"
             "Setup:\n"
-            "- Stand in the Lumbridge Swamp mine, south of Lumbridge.\n"
+            "- Choose the ore in the options.\n"
+            "- Tin: stand in the Lumbridge Swamp mine, whose tin rocks the script's"
+            " profile marks. Iron: stand in an iron mine and mark its iron rocks cyan"
+            " with RuneLite's Object Markers plug-in.\n"
             "- A pickaxe wielded or in the inventory.\n"
-            "- Mark the tin rocks cyan with RuneLite's Object Markers plug-in.\n"
             "- Turn on shift-click dropping in the game's settings.\n"
             "- Requires the RuneColor Bridge plug-in (plugin/README.md).\n"
             "- Stretched Mode off, Resizable - Classic layout."
@@ -40,6 +42,7 @@ class OSRSPowerMiner(OSRSBot):
         self.take_breaks = False
         self.relog_time = rd.biased_trunc_norm_samp(18000, 21000)
         self.mark_color = self.cp.hsv.CYAN_MARK
+        self.ore = rules.TIN
         self.ores_mined = 0
         self.ores_dropped = 0
         self.gems_dropped = 0
@@ -52,6 +55,7 @@ class OSRSPowerMiner(OSRSBot):
         self.options_builder.add_checkbox_option(
             "take_breaks", "Take short breaks?", [" "]
         )
+        self.options_builder.add_dropdown_option("ore", "Ore:", list(rules.ORES))
 
     def save_options(self, options: dict) -> None:
         """Load options into the bot object.
@@ -65,9 +69,12 @@ class OSRSPowerMiner(OSRSBot):
                 self.run_time = int(options[option])
             elif option == "take_breaks":
                 self.take_breaks = options[option] != []
+            elif option == "ore":
+                self.ore = rules.ORES[options[option]]
             else:
                 self.log_msg(f"Unexpected option: {option}")
         self.log_msg(f"Running time: {self.run_time} minutes.")
+        self.log_msg(f"Ore: {self.ore.name}.")
         self.log_msg("Options set successfully.")
         self.options_set = True
 
@@ -94,17 +101,19 @@ class OSRSPowerMiner(OSRSBot):
                 self.potentially_take_a_break()
             if rules.is_full(self.bridge.inventory) and not self.drop_ore():
                 self.logout_and_stop_script(
-                    "The inventory is full and holds no tin ore or gems to drop."
+                    f"The inventory is full and holds no {self.ore_label} or gems to drop."
                 )
                 return
             if not self.mine_until_found():
-                self.logout_and_stop_script("No marked tin rocks in sight.")
+                self.logout_and_stop_script(
+                    f"No marked {self.ore.name.lower()} rocks in sight."
+                )
                 return
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
         self.update_progress(1)
         self.log_msg(
-            f"Mined {self.ores_mined} tin ore, dropped {self.ores_dropped} ore and"
+            f"Mined {self.ores_mined} {self.ore_label}, dropped {self.ores_dropped} ore and"
             f" {self.gems_dropped} gems."
         )
         self.logout_and_stop_script("[END]")
@@ -127,7 +136,7 @@ class OSRSPowerMiner(OSRSBot):
         return False
 
     def mine(self) -> bool:
-        """Click the nearest marked tin rock and wait until it is mined out.
+        """Click the nearest marked rock of our ore and wait until it is mined out.
 
         Returns:
             bool: True if a rock was clicked and mining started.
@@ -137,9 +146,9 @@ class OSRSPowerMiner(OSRSBot):
             return False
         rock = min(rocks, key=RuneLiteObject.dist_from_rect_center)
         self.mouse.move_to(rock.random_point())
-        # Guards against a copper rock marked by mistake: its ore would never be
-        # dropped and would fill the inventory for good.
-        if not self.get_mouseover_text(contains="Tin"):
+        # Guards against another ore's rock marked by mistake: its ore would never
+        # be dropped and would fill the inventory for good.
+        if not self.get_mouseover_text(contains=self.ore.rock_word):
             return False
         ores_before = self._ore_count()
         self.mouse.click()
@@ -154,17 +163,20 @@ class OSRSPowerMiner(OSRSBot):
         mined = max(self._ore_count() - ores_before, 0)
         self.ores_mined += mined
         if mined:
-            self.log_msg(f"Mined {self.ores_mined} tin ore so far.", overwrite=True)
+            self.log_msg(
+                f"Mined {self.ores_mined} {self.ore_label} so far.", overwrite=True
+            )
         return True
 
     def drop_ore(self) -> bool:
-        """Shift-click drop every tin ore and gem, leaving everything else alone.
+        """Shift-click drop every ore of our kind and gem, leaving everything else alone.
 
         Returns:
             bool: True if anything was dropped.
         """
         slots = rules.drop_order(
-            rules.drop_slots(self.bridge.inventory), self.get_inv_drop_traversal_path()
+            rules.drop_slots(self.bridge.inventory, self.ore),
+            self.get_inv_drop_traversal_path(),
         )
         if not slots:
             return False
@@ -172,21 +184,25 @@ class OSRSPowerMiner(OSRSBot):
         self.drop_items(slots, verbose=False)
         self._wait_until(
             lambda: self.bridge.inventory is not None
-            and not rules.drop_slots(self.bridge.inventory),
+            and not rules.drop_slots(self.bridge.inventory, self.ore),
             DROP_TIMEOUT,
         )
-        dropped = len(slots) - len(rules.drop_slots(self.bridge.inventory))
+        dropped = len(slots) - len(rules.drop_slots(self.bridge.inventory, self.ore))
         ores = ores_before - self._ore_count()
         self.ores_dropped += ores
         self.gems_dropped += dropped - ores
         self.log_msg(
-            f"Dropped {ores} tin ore and {dropped - ores} gems"
+            f"Dropped {ores} {self.ore_label} and {dropped - ores} gems"
             f" ({self.ores_dropped} ore, {self.gems_dropped} gems so far)."
         )
         return dropped > 0
 
+    @property
+    def ore_label(self) -> str:
+        return f"{self.ore.name.lower()} ore"
+
     def _ore_count(self) -> int:
-        return len(rules.ore_slots(self.bridge.inventory))
+        return len(rules.ore_slots(self.bridge.inventory, self.ore))
 
     def _wait_until(self, condition: Callable[[], object], timeout: float) -> bool:
         end_time = time.time() + timeout
