@@ -1,15 +1,15 @@
 """Run the Power Miner against a live client and report what it did.
 
 This is a live test, not a unit test. It needs RuneLite running in developer mode
-with the RuneColor Bridge plug-in, and it moves the real mouse. Start in the
-Lumbridge Swamp mine with shift-click dropping turned on.
+with the RuneColor Bridge plug-in, and it moves the real mouse. Start next to
+the marked rocks of the chosen ore with shift-click dropping turned on.
 
 The pass criterion is checked against the game: every item the bot must not drop
-(anything but tin ore and uncut gems) that was in the inventory at the start, as
+(anything but the chosen ore and uncut gems) that was in the inventory at the start, as
 the plug-in reports it, must still be there at the end.
 
 Usage:
-    python tests/live_power_miner.py [--minutes M]
+    python tests/live_power_miner.py [--minutes M] [--ore {Tin,Iron}]
 """
 
 import argparse
@@ -40,22 +40,24 @@ def switch_profile(bot: OSRSPowerMiner, timeout: float = 20) -> bool:
     return False
 
 
-def kept_items(inventory) -> Counter:
+def kept_items(inventory, ore: rules.Ore) -> Counter:
     """Count everything the bot must never drop."""
     return Counter(
-        i for i in inventory or [] if i not in rules.DROPPED and i != rules.EMPTY
+        i for i in inventory or [] if i not in ore.dropped and i != rules.EMPTY
     )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--minutes", type=int, default=5)
+    parser.add_argument("--ore", choices=list(rules.ORES), default="Tin")
     args = parser.parse_args()
 
     bot = OSRSPowerMiner()
     bot.set_controller(MockBotController(bot))
     bot.options_set = True
     bot.run_time = args.minutes
+    bot.ore = rules.ORES[args.ore]
     bot.take_breaks = False
     bot.attach_bridge()
     time.sleep(2)
@@ -86,8 +88,9 @@ def main() -> None:
     after = snapshots[0] if snapshots else bot.bridge.inventory
 
     print("\n" + "=" * 60 + "\nSUMMARY\n" + "=" * 60, flush=True)
-    print(f"  tin ore mined   : {bot.ores_mined}", flush=True)
-    print(f"  tin ore dropped : {bot.ores_dropped}", flush=True)
+    print(f"  ore             : {bot.ore.name}", flush=True)
+    print(f"  ore mined       : {bot.ores_mined}", flush=True)
+    print(f"  ore dropped     : {bot.ores_dropped}", flush=True)
     print(f"  gems dropped    : {bot.gems_dropped}", flush=True)
     print(f"  inventory before: {before}", flush=True)
     print(f"  inventory after : {after}", flush=True)
@@ -96,8 +99,8 @@ def main() -> None:
         return
     # Mining can add items along the way (a clue geode, say), so only what was
     # there at the start has to still be there.
-    lost = kept_items(before) - kept_items(after)
-    gained = kept_items(after) - kept_items(before)
+    lost = kept_items(before, bot.ore) - kept_items(after, bot.ore)
+    gained = kept_items(after, bot.ore) - kept_items(before, bot.ore)
     print(f"  new other items : {dict(gained) or 'none'}", flush=True)
     print(f"  other items kept: {'FAIL ' + str(dict(lost)) if lost else 'PASS'}")
 

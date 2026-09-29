@@ -1,30 +1,54 @@
 """Which slots the Power Miner drops and when it counts as full, kept free of I/O."""
 
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import Dict, FrozenSet, List, Optional
 
-TIN_ORE = 438
 # Uncut sapphire, emerald, ruby and diamond: the gems mining can give.
 GEMS = frozenset({1623, 1621, 1619, 1617})
-DROPPED = GEMS | {TIN_ORE}
 EMPTY = -1
 
 
-def ore_slots(inventory: Optional[List[int]], ore: int = TIN_ORE) -> List[int]:
+@dataclass(frozen=True)
+class Ore:
+    """An ore the Power Miner can mine, and how to recognise its rock."""
+
+    name: str
+    item_id: int
+    # The rock's mouseover reads "Mine <rock_word> rocks".
+    rock_word: str
+
+    def __post_init__(self) -> None:
+        if not self.name or not self.rock_word or self.item_id < 0:
+            raise ValueError(f"Incomplete ore: {self!r}")
+
+    @property
+    def dropped(self) -> FrozenSet[int]:
+        """The item IDs dropped on a full inventory: this ore and every gem."""
+        return GEMS | {self.item_id}
+
+
+TIN = Ore("Tin", 438, "Tin")
+IRON = Ore("Iron", 440, "Iron")
+ORES: Dict[str, Ore] = {ore.name: ore for ore in (TIN, IRON)}
+
+
+def ore_slots(inventory: Optional[List[int]], ore: Ore) -> List[int]:
     """Return the inventory slots holding the ore, lowest first.
 
     Args:
         inventory (Optional[List[int]]): Item IDs per slot, or None if unknown.
-        ore (int, optional): The item ID to look for. Defaults to tin ore.
+        ore (Ore): The ore to look for.
 
     Returns:
         List[int]: The slot indices.
     """
-    return [slot for slot, item in enumerate(inventory or []) if item == ore]
+    return [slot for slot, item in enumerate(inventory or []) if item == ore.item_id]
 
 
-def drop_slots(inventory: Optional[List[int]]) -> List[int]:
-    """Return the inventory slots holding tin ore or a gem, lowest first."""
-    return [slot for slot, item in enumerate(inventory or []) if item in DROPPED]
+def drop_slots(inventory: Optional[List[int]], ore: Ore) -> List[int]:
+    """Return the inventory slots holding the ore or a gem, lowest first."""
+    dropped = ore.dropped
+    return [slot for slot, item in enumerate(inventory or []) if item in dropped]
 
 
 def is_full(inventory: Optional[List[int]]) -> bool:
