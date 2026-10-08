@@ -95,7 +95,7 @@ class SceneObject:
 
 @dataclass(frozen=True)
 class MenuEntry:
-    """One menu option. `rect` is None for the hover entry of a closed menu."""
+    """One menu option. `rect` is None for `top`, the hover entry."""
 
     option: str
     target: str

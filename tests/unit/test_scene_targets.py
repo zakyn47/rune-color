@@ -13,10 +13,18 @@ from utilities.api.bridge_api import Menu, MenuEntry  # noqa: E402
 class FakeBridge:
     def __init__(self, menus):
         self._menus = list(menus)
+        self._index = 0
+
+    @property
+    def tick(self):
+        return self._index
 
     @property
     def menu(self):
-        return self._menus.pop(0) if len(self._menus) > 1 else self._menus[0]
+        menu = self._menus[self._index]
+        if self._index < len(self._menus) - 1:
+            self._index += 1
+        return menu
 
 
 def hover(target):
@@ -38,6 +46,10 @@ class WaitForHoverTextTest(unittest.TestCase):
 
     def test_gives_up_on_the_wrong_object(self):
         bot = FakeBot([hover("Iron rocks")])
+        self.assertFalse(bot.wait_for_hover_text("Tin", timeout=0.05))
+
+    def test_ignores_a_hover_the_mouse_has_already_left(self):
+        bot = FakeBot([hover("Tin rocks"), hover("Iron rocks")])
         self.assertFalse(bot.wait_for_hover_text("Tin", timeout=0.05))
 
 

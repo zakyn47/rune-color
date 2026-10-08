@@ -222,7 +222,7 @@ public final class Snapshot {
         }
     }
 
-    /** One menu option. {@code rect} is null for the hover entry of a closed menu. */
+    /** One menu option. {@code rect} is null for {@code top}, the hover entry. */
     public static final class MenuEntry {
         public final String option;
         public final String target;

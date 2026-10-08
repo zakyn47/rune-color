@@ -110,7 +110,7 @@ today, on the client thread from the plug-in's timer. No new threads.
 
 New `Polygon` built from screen points. The constructor rejects fewer than
 3 points. It has `random_point()` (rejection sampling inside the bounds, biased to
-the centre like `Rectangle.random_point`), `contains(point)` and `center()`.
+the centre like `Rectangle.random_point`), `contains(point)` and `center` (property).
 
 ### `RuneLiteBot`
 

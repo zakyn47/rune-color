@@ -163,11 +163,6 @@ class MineTest(unittest.TestCase):
         self.assertEqual(bot.mouseover_words, ["Iron"])
         self.assertEqual(bot.ores_mined, 1)
 
-    def test_no_marked_rock_means_no_click(self):
-        bot = FakeMiner(FakeBridge(EMPTY), rocks=0)
-        self.assertFalse(bot.mine())
-        self.assertEqual(bot.mouse.clicks, 0)
-
     def test_does_not_click_a_rock_that_is_not_tin(self):
         bot = FakeMiner(FakeBridge(EMPTY), says_tin=False)
         self.assertFalse(bot.mine())
@@ -183,6 +178,7 @@ class MineTest(unittest.TestCase):
     def test_no_rock_in_view_means_nothing_to_mine(self):
         miner = FakeMiner(FakeBridge(EMPTY), rocks=0)
         self.assertFalse(miner.mine())
+        self.assertEqual(miner.mouse.clicks, 0)
 
 
 class DropTest(unittest.TestCase):

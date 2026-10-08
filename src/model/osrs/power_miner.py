@@ -15,7 +15,7 @@ IDLE_SECONDS = 1.8
 MINE_TIMEOUT = 30
 DROP_TIMEOUT = 5
 # Tin and iron respawn in a few seconds, so a mine with every rock depleted is normal.
-# Only this long without a single marked rock means we are somewhere else.
+# Only this long without a rock turning up at all means we are somewhere else.
 SEARCH_TIMEOUT = 60
 CAMERA_EVERY = 5  # Failed searches between camera turns.
 SECOND_ROCK_CHANCE = 0.2  # Sometimes the next rock, so the route between rocks varies.
@@ -194,6 +194,10 @@ class OSRSPowerMiner(OSRSBot):
         if not slots:
             return False
         ores_before = self._ore_count()
+        if self.bridge.inventory_slots is None:
+            self.log_msg(
+                "The bridge sent no inventory slots; dropping from the measured ones."
+            )
         self.drop_items(slots, verbose=False, rects=self.bridge.inventory_slots)
         self._wait_until(
             lambda: self.bridge.inventory is not None

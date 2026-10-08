@@ -110,19 +110,29 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         """Wait until the client's hover text names what is under the mouse.
 
         A snapshot is up to a tick older than the mouse, so the first one after a
-        move can still describe whatever was under the cursor before.
+        move can still describe whatever was under the cursor before. A menu only
+        counts once its snapshot's tick is newer than the one in hand when we
+        started waiting.
 
         Args:
             contains (str): Case-sensitive text the hover text must contain.
-            timeout (float, optional): Seconds to wait. Defaults to 1.5.
+            timeout (float, optional): Seconds to wait. Defaults to 1.5, about two
+                snapshots.
 
         Returns:
-            bool: True once the hover text contains it.
+            bool: True once a snapshot taken after the wait began has hover text
+                containing it.
         """
+        start_tick = self.bridge.tick
         end_time = time.time() + timeout
         while time.time() < end_time:
+            current_tick = self.bridge.tick
             menu = self.bridge.menu
-            if menu is not None and contains in menu.top_text:
+            if (
+                current_tick > start_tick
+                and menu is not None
+                and contains in menu.top_text
+            ):
                 return True
             time.sleep(self.game_tick / 3)
         return False
