@@ -22,13 +22,7 @@ public class InventorySlotsTest {
         Mockito.when(canvas.getLocationOnScreen()).thenReturn(new java.awt.Point(180, 30));
         Mockito.when(client.getCanvas()).thenReturn(canvas);
         Mockito.when(client.getWidget(InterfaceID.Inventory.ITEMS)).thenReturn(items);
-        Widget[] slots = new Widget[28];
-        for (int i = 0; i < slots.length; i++) {
-            slots[i] = Mockito.mock(Widget.class);
-            Mockito.when(slots[i].getBounds())
-                    .thenReturn(new Rectangle(560 + 42 * (i % 4), 210 + 36 * (i / 4), 36, 32));
-        }
-        Mockito.when(items.getDynamicChildren()).thenReturn(slots);
+        Mockito.when(items.getBounds()).thenReturn(new Rectangle(560, 210, 168, 252));
     }
 
     @Test
