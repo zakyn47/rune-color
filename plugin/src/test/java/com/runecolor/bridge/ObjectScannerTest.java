@@ -47,6 +47,12 @@ public class ObjectScannerTest {
         Mockito.when(object.getWorldLocation()).thenReturn(new WorldPoint(3200 + dx, 3200 + dy, 0));
         Mockito.when(object.getClickbox())
                 .thenReturn(onScreen ? new Rectangle(290, 180, 20, 40) : null);
+        putOnTile(object, dx, dy);
+        return object;
+    }
+
+    /** Put an existing object on the tile at an offset from the player. */
+    private void putOnTile(GameObject object, int dx, int dy) {
         Tile tile = tiles[0][50 + dx][50 + dy];
         if (tile == null) {
             tile = Mockito.mock(Tile.class);
@@ -56,7 +62,6 @@ public class ObjectScannerTest {
         GameObject[] all = existing == null ? new GameObject[] {object}
                 : appended(existing, object);
         Mockito.when(tile.getGameObjects()).thenReturn(all);
-        return object;
     }
 
     private static GameObject[] appended(GameObject[] objects, GameObject object) {
@@ -113,5 +118,21 @@ public class ObjectScannerTest {
     public void unknownWithoutACanvas() {
         Mockito.when(client.getCanvas()).thenReturn(null);
         assertNull(scan(WANT_TIN));
+    }
+
+    @Test
+    public void reportsALargeObjectOnlyOnceFromItsAnchorTile() {
+        GameObject object = Mockito.mock(GameObject.class);
+        Mockito.when(object.getId()).thenReturn(TIN);
+        Mockito.when(object.getWorldLocation()).thenReturn(new WorldPoint(3201, 3200, 0));
+        Mockito.when(object.getClickbox()).thenReturn(new Rectangle(290, 180, 20, 40));
+        Mockito.when(object.getSceneMinLocation())
+                .thenReturn(new net.runelite.api.Point(51, 50));
+        putOnTile(object, 1, 0);
+        putOnTile(object, 2, 0);
+
+        List<Snapshot.SceneObject> found = scan(WANT_TIN);
+        assertEquals(1, found.size());
+        assertEquals(1, found.get(0).distance);
     }
 }
