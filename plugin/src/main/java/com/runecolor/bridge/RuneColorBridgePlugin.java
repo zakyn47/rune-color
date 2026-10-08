@@ -145,7 +145,8 @@ public class RuneColorBridgePlugin extends Plugin {
                     SnapshotPublisher current = publisher;
                     if (current != null) {
                         current.publish(SnapshotBuilder.build(
-                                client, System.currentTimeMillis(), activeProfileName()));
+                                client, System.currentTimeMillis(), activeProfileName(),
+                                objectRequest.ids()));
                     }
                 } catch (Exception e) {
                     log.warn("Skipped a snapshot: {}", e.toString());

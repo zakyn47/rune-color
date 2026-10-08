@@ -23,8 +23,11 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InventoryID;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Turns the live client into an immutable {@link Snapshot}.
@@ -33,7 +36,7 @@ import java.util.List;
  * client thread, where the {@code Client} API is safe to touch.
  */
 public final class SnapshotBuilder {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     /** What {@code Actor#getAnimation()} returns when nothing is playing. */
     static final int NO_ANIMATION = -1;
@@ -64,6 +67,11 @@ public final class SnapshotBuilder {
     }
 
     public static Snapshot build(Client client, long nowMillis, String profile) {
+        return build(client, nowMillis, profile, Collections.emptySet());
+    }
+
+    public static Snapshot build(Client client, long nowMillis, String profile,
+                                  Set<Integer> objectIds) {
         String gameState = client.getGameState() == null
                 ? "UNKNOWN"
                 : client.getGameState().toString();
@@ -72,7 +80,7 @@ public final class SnapshotBuilder {
         if (player == null) {
             return new Snapshot(SCHEMA_VERSION, client.getTickCount(), nowMillis,
                     gameState, null, null, null, null, null, null, null, profile,
-                    null, null, inventory(client), null);
+                    null, null, inventory(client), null, null, null, null);
         }
 
         WorldPoint tile = player.getWorldLocation();
@@ -97,7 +105,19 @@ public final class SnapshotBuilder {
                 target(player),
                 groundItems(client, player),
                 inventory(client),
-                npcs(client, player));
+                npcs(client, player),
+                orNull(() -> ObjectScanner.scan(client, player, objectIds)),
+                orNull(() -> InventorySlots.read(client)),
+                orNull(() -> MenuReader.read(client)));
+    }
+
+    /** A new field that fails to build must not cost the bot the rest of the snapshot. */
+    private static <T> T orNull(Supplier<T> read) {
+        try {
+            return read.get();
+        } catch (RuntimeException e) {
+            return null;
+        }
     }
 
     /**

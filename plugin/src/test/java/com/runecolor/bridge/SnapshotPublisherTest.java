@@ -27,9 +27,10 @@ import static org.junit.Assert.assertTrue;
 
 public class SnapshotPublisherTest {
     private static Snapshot sample() {
-        return new Snapshot(1, 5, 99L, "LOGGED_IN",
+        return new Snapshot(2, 5, 99L, "LOGGED_IN",
                 new Snapshot.Stat(42, 55), new Snapshot.Stat(12, 43), 87,
-                new Snapshot.Point(3222, 3218, 0), 879, false, null, null, null, null, null, null);
+                new Snapshot.Point(3222, 3218, 0), 879, false, null, null, null, null, null, null,
+                null, null, null);
     }
 
     @Test
@@ -79,7 +80,7 @@ public class SnapshotPublisherTest {
 
             assertNotNull("no request arrived", request);
             assertTrue(request.startsWith("POST /api/snapshot/"));
-            assertTrue(request.contains("\"schema\":1"));
+            assertTrue(request.contains("\"schema\":2"));
             assertTrue(request.contains("\"run_energy\":87"));
             assertTrue(request.contains("\"world_point\""));
             assertTrue(request.contains("\"sent_at\":99"));

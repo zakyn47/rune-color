@@ -147,7 +147,7 @@ public class SnapshotBuilderTest {
 
         Snapshot snapshot = SnapshotBuilder.build(client, 1757193600123L);
 
-        assertEquals(1, snapshot.schema);
+        assertEquals(2, snapshot.schema);
         assertEquals(123456, snapshot.tick);
         assertEquals(1757193600123L, snapshot.sentAt);
         assertEquals("LOGGED_IN", snapshot.gameState);

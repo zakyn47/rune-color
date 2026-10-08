@@ -68,10 +68,21 @@ public final class Snapshot {
     /** NPCs near the player and on screen, nearest first, or null if unknown. */
     public final List<Npc> npcs;
 
+    /** The objects the bot asked for, nearest first, or null if unknown. */
+    public final List<SceneObject> objects;
+
+    /** Each inventory slot on screen as [x, y, w, h], or null while hidden. */
+    @SerializedName("inventory_slots")
+    public final List<int[]> inventorySlots;
+
+    /** The client menu, or null if unknown. */
+    public final Menu menu;
+
     Snapshot(int schema, int tick, long sentAt, String gameState, Stat hitpoints,
              Stat prayer, Integer runEnergy, Point worldPoint, Integer animation,
              Boolean idle, ScreenPoint fire, String profile, Target target,
-             List<GroundItem> groundItems, List<Integer> inventory, List<Npc> npcs) {
+             List<GroundItem> groundItems, List<Integer> inventory, List<Npc> npcs,
+             List<SceneObject> objects, List<int[]> inventorySlots, Menu menu) {
         this.schema = schema;
         this.tick = tick;
         this.sentAt = sentAt;
@@ -88,6 +99,9 @@ public final class Snapshot {
         this.groundItems = groundItems;
         this.inventory = inventory;
         this.npcs = npcs;
+        this.objects = objects;
+        this.inventorySlots = inventorySlots;
+        this.menu = menu;
     }
 
     /** A current and maximum pair, as the orbs show them. */
