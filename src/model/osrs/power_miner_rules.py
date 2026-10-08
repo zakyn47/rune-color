@@ -14,11 +14,14 @@ class Ore:
 
     name: str
     item_id: int
-    # The rock's mouseover reads "Mine <rock_word> rocks".
+    # The rock's hover text reads "Mine <rock_word> rocks".
     rock_word: str
+    # Object IDs of the rock while it still has ore. A depleted rock changes ID, so
+    # asking the bridge for these alone skips depleted rocks.
+    rock_ids: FrozenSet[int]
 
     def __post_init__(self) -> None:
-        if not self.name or not self.rock_word or self.item_id < 0:
+        if not self.name or not self.rock_word or self.item_id < 0 or not self.rock_ids:
             raise ValueError(f"Incomplete ore: {self!r}")
 
     @property
@@ -27,8 +30,8 @@ class Ore:
         return GEMS | {self.item_id}
 
 
-TIN = Ore("Tin", 438, "Tin")
-IRON = Ore("Iron", 440, "Iron")
+TIN = Ore("Tin", 438, "Tin", frozenset({11360, 11361}))
+IRON = Ore("Iron", 440, "Iron", frozenset({11364, 11365}))
 ORES: Dict[str, Ore] = {ore.name: ore for ore in (TIN, IRON)}
 
 

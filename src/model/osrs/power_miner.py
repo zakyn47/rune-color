@@ -1,10 +1,11 @@
+import random
 import time
-from typing import Callable
+from typing import Callable, Optional
 
 import model.osrs.power_miner_rules as rules
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
-from utilities.geometry import RuneLiteObject
+from utilities.api.bridge_api import SceneObject
 
 BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in to be heard from.
 # How long a click on a rock has to set us walking or mining.
@@ -17,6 +18,7 @@ DROP_TIMEOUT = 5
 # Only this long without a single marked rock means we are somewhere else.
 SEARCH_TIMEOUT = 60
 CAMERA_EVERY = 5  # Failed searches between camera turns.
+SECOND_ROCK_CHANCE = 0.2  # Sometimes the next rock, so the route between rocks varies.
 
 
 class OSRSPowerMiner(OSRSBot):
@@ -25,13 +27,11 @@ class OSRSPowerMiner(OSRSBot):
     def __init__(self) -> None:
         bot_title = "Power Miner"
         description = (
-            "Mine cyan-marked tin or iron rocks until the inventory is full, drop"
+            "Mine tin or iron rocks until the inventory is full, drop"
             " that ore and uncut gems (and nothing else), and repeat.\n\n"
             "Setup:\n"
             "- Choose the ore in the options.\n"
-            "- Tin: stand in the Lumbridge Swamp mine, whose tin rocks the script's"
-            " profile marks. Iron: stand in an iron mine and mark its iron rocks cyan"
-            " with RuneLite's Object Markers plug-in.\n"
+            "- Stand in a tin or iron mine.\n"
             "- A pickaxe wielded or in the inventory.\n"
             "- Turn on shift-click dropping in the game's settings.\n"
             "- Requires the RuneColor Bridge plug-in (plugin/README.md).\n"
@@ -41,7 +41,6 @@ class OSRSPowerMiner(OSRSBot):
         self.run_time = 60  # Measured in minutes.
         self.take_breaks = False
         self.relog_time = rd.biased_trunc_norm_samp(18000, 21000)
-        self.mark_color = self.cp.hsv.CYAN_MARK
         self.ore = rules.TIN
         self.ores_mined = 0
         self.ores_dropped = 0
@@ -92,6 +91,13 @@ class OSRSPowerMiner(OSRSBot):
             )
             self.stop()
             return
+        self.bridge.request_objects(self.ore.rock_ids)
+        try:
+            self._mine_for_run_time()
+        finally:
+            self.bridge.clear_objects()
+
+    def _mine_for_run_time(self) -> None:
         self.log_msg(f"[START] ({self.run_time // 60}h {self.run_time % 60}m)")
         self.prepare_standard_initial_state()
         start_time = time.time()
@@ -106,7 +112,7 @@ class OSRSPowerMiner(OSRSBot):
                 return
             if not self.mine_until_found():
                 self.logout_and_stop_script(
-                    f"No marked {self.ore.name.lower()} rocks in sight."
+                    f"No {self.ore.name.lower()} rocks in sight."
                 )
                 return
             self.update_progress((time.time() - start_time) / end_time)
@@ -136,19 +142,18 @@ class OSRSPowerMiner(OSRSBot):
         return False
 
     def mine(self) -> bool:
-        """Click the nearest marked rock of our ore and wait until it is mined out.
+        """Click a rock of our ore and wait until it is mined out.
 
         Returns:
             bool: True if a rock was clicked and mining started.
         """
-        rocks = self.find_colors(self.win.game_view, self.mark_color)
-        if not rocks:
+        rock = self._pick_rock()
+        if rock is None:
             return False
-        rock = min(rocks, key=RuneLiteObject.dist_from_rect_center)
-        self.mouse.move_to(rock.random_point())
-        # Guards against another ore's rock marked by mistake: its ore would never
-        # be dropped and would fill the inventory for good.
-        if not self.get_mouseover_text(contains=self.ore.rock_word):
+        self.move_to_scene_object(rock)
+        # Guards against a wrong rock ID: its ore would never be dropped and would
+        # fill the inventory for good.
+        if not self.wait_for_hover_text(self.ore.rock_word):
             return False
         ores_before = self._ore_count()
         self.mouse.click()
@@ -168,6 +173,14 @@ class OSRSPowerMiner(OSRSBot):
             )
         return True
 
+    def _pick_rock(self) -> Optional[SceneObject]:
+        rocks = self.bridge.objects
+        if not rocks:
+            return None
+        if len(rocks) > 1 and random.random() < SECOND_ROCK_CHANCE:
+            return rocks[1]
+        return rocks[0]
+
     def drop_ore(self) -> bool:
         """Shift-click drop every ore of our kind and gem, leaving everything else alone.
 
@@ -181,7 +194,7 @@ class OSRSPowerMiner(OSRSBot):
         if not slots:
             return False
         ores_before = self._ore_count()
-        self.drop_items(slots, verbose=False)
+        self.drop_items(slots, verbose=False, rects=self.bridge.inventory_slots)
         self._wait_until(
             lambda: self.bridge.inventory is not None
             and not rules.drop_slots(self.bridge.inventory, self.ore),
