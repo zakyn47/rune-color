@@ -207,4 +207,30 @@ public final class Snapshot {
             this.hull = hull;
         }
     }
+
+    /** One menu option. {@code rect} is null for the hover entry of a closed menu. */
+    public static final class MenuEntry {
+        public final String option;
+        public final String target;
+        public final int[] rect;
+
+        MenuEntry(String option, String target, int[] rect) {
+            this.option = option;
+            this.target = target;
+            this.rect = rect;
+        }
+    }
+
+    /** The client menu: what a left-click would do, and the rows of an open menu. */
+    public static final class Menu {
+        public final boolean open;
+        public final MenuEntry top;
+        public final List<MenuEntry> entries;
+
+        Menu(boolean open, MenuEntry top, List<MenuEntry> entries) {
+            this.open = open;
+            this.top = top;
+            this.entries = entries;
+        }
+    }
 }
