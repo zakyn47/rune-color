@@ -35,9 +35,9 @@ so the jar and Python must be updated together.
 {"profile": {"name": "...", "path": "..."}, "objects": [11360, 11361]}
 ```
 
-The plug-in keeps the latest list. A missing or empty `objects` means no objects
-are reported. A malformed `objects` is ignored and leaves the previous list in
-place, as a malformed `profile` does today.
+The plug-in keeps what the latest reply asked for. A missing, empty or malformed
+`objects` means no objects are reported (the bot states its wish on every reply,
+so the next good reply corrects it).
 
 ### Plug-in → bot (snapshot), new fields
 
@@ -46,7 +46,7 @@ place, as a malformed `profile` does today.
   {"id": 11360, "tile": {"x": 3229, "y": 3148, "plane": 0}, "distance": 2,
    "hull": [[812, 401], [840, 398], [851, 430]]}
 ],
-"inventorySlots": [[x, y, w, h], "... 28 entries"],
+"inventory_slots": [[x, y, w, h], "... 28 entries"],
 "menu": {"open": false,
          "top": {"option": "Mine", "target": "Tin rocks"},
          "entries": [{"option": "Mine", "target": "Tin rocks", "rect": [x, y, w, h]}]}
@@ -59,7 +59,7 @@ place, as a malformed `profile` does today.
 - `objects`: requested IDs only, `GameObject`s only, within 15 tiles, on the
   player's plane, nearest first (Chebyshev distance), at most 10. Objects with
   no clickbox (off screen) are skipped. `hull` has 3 to 20 points.
-- `inventorySlots`: exactly 28 rectangles, or null when the inventory widget is
+- `inventory_slots`: exactly 28 rectangles, or null when the inventory widget is
   hidden.
 - `menu.entries` is top-first and empty when the menu is closed. `menu.top` is
   what a left-click would do (the hover text), or null when there is no entry.
@@ -74,7 +74,7 @@ place, as a malformed `profile` does today.
 | `BotReply` | Parses a reply body once into `profile` and `objects`. |
 | `ProfileSwitcher` | Unchanged behaviour, but takes the parsed `BotReply` instead of parsing JSON itself. |
 | `ObjectRequest` | Holds the latest requested ID set (`AtomicReference<Set<Integer>>`). Written on the publisher thread, read on the client thread. |
-| `ObjectScanner` | Scans scene tiles within 15 tiles for `GameObject`s in the requested set and builds `Snapshot.SceneObject`s. The tile-radius loop is shared with the existing fire lookup. |
+| `ObjectScanner` | Scans scene tiles within 15 tiles for `GameObject`s in the requested set and builds `Snapshot.SceneObject`s. Reuses `SnapshotBuilder`'s nearest-first helper; a multi-tile object is reported once. |
 | `HullOutline` | Pure function: clickbox `Shape` + canvas origin → screen polygon of 3 to 20 points (flatten the path, convex hull, drop points evenly). |
 | `InventorySlots` | Inventory container widget → 28 child bounds, or null when hidden. |
 | `MenuReader` | Reads `isMenuOpen()`, `getMenuEntries()` (bottom-up in the client, reversed here), menu x/y/width. Entry rect = menu origin + 19 px header + 15 px per row. Top entry = last element of the client's array. |
@@ -114,17 +114,17 @@ the centre like `Rectangle.random_point`), `contains(point)` and `center()`.
 
 ### `RuneLiteBot`
 
-- `click_scene_object(obj)`: moves the mouse to `obj.hull.random_point()` and clicks.
-- `hover_text() -> str`: `bridge.menu.top_text`, with no OCR.
-- `inventory_slot(i) -> Rectangle`: from `bridge.inventory_slots`.
+- `move_to_scene_object(obj)`: moves the mouse to `obj.hull.random_point()`.
+- `wait_for_hover_text(contains) -> bool`: waits up to 1.5 s for `bridge.menu.top_text`
+  to contain the text, because a snapshot lags the mouse by up to a tick. No OCR.
 - `drop_items` accepts an optional source of slot rectangles. The default stays
   the template-measured slots, so other scripts are unchanged.
 
-### Python tests (pytest)
+### Python tests (unittest)
 
 - `Polygon`: sampled points always inside; constructor validation.
 - `bridge_api`: parsing of the three new fields and the `objects` request in the
-  reply, through the existing loopback fixture with schema-2 JSON.
+  reply, through the shared fixture renamed to `snapshot_v2.json`.
 
 ## Power Miner
 
@@ -135,8 +135,8 @@ the centre like `Rectangle.random_point`), `contains(point)` and `center()`.
 - `mine_until_found`: picks from `bridge.objects`, usually the nearest,
   sometimes the second nearest. With none in view, keeps today's camera-turn
   search and `SEARCH_TIMEOUT`.
-- `mine`: `click_scene_object(rock)`. The rock check becomes `hover_text()`
-  containing `ore.rock_word`.
+- `mine`: `move_to_scene_object(rock)`, then `wait_for_hover_text(ore.rock_word)`,
+  then click.
 - `drop_ore`: drops using the bridge's slot rectangles.
 - Removed: `mark_color` and the cyan marker search; object-marker entries in
   `src/profiles/power_miner.properties`; "mark rocks cyan" from the setup text.
@@ -145,9 +145,9 @@ the centre like `Rectangle.random_point`), `contains(point)` and `center()`.
 
 ## Verification
 
-1. `gradlew test`, `pytest`, typecheck and lint pass.
-2. Jar rebuilt and side-loaded; `tests/live_bridge.py` shows objects, slots and
-   menu while standing at the mine (also confirms the rock IDs).
+1. `gradlew test`, the unittest suite, flake8 and black pass.
+2. Jar rebuilt and side-loaded; a throwaway probe prints objects, slots and menu
+   while standing at the mine (also confirms the rock IDs).
 3. `tests/live_power_miner.py --minutes 5`, then `--minutes 30`. Pass: "other
    items kept: PASS", ore mined and dropped, no colour or OCR calls in the log.
 
