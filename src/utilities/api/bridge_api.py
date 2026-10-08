@@ -20,14 +20,16 @@ import socket
 import threading
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Iterable, List, Optional, Tuple, Union
 
 from flask import Flask, Response, jsonify, request
 from werkzeug.serving import make_server
 
+from utilities.geometry import Polygon, Rectangle
+
 log = logging.getLogger(__name__)
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Two game ticks. A snapshot older than this is treated as no snapshot at all.
 DEFAULT_MAX_AGE = 1.2
@@ -79,6 +81,56 @@ class Npc:
     tile: Tile
     point: Tuple[int, int]
     busy: bool
+
+
+@dataclass(frozen=True)
+class SceneObject:
+    """A game object the bot asked for, with its clickbox outline on screen."""
+
+    id: int
+    tile: Tile
+    distance: int
+    hull: Polygon
+
+
+@dataclass(frozen=True)
+class MenuEntry:
+    """One menu option. `rect` is None for the hover entry of a closed menu."""
+
+    option: str
+    target: str
+    rect: Optional[Rectangle]
+
+
+@dataclass(frozen=True)
+class Menu:
+    """The client menu: what a left-click would do, and the rows of an open menu."""
+
+    open: bool
+    top: Optional[MenuEntry]
+    entries: List[MenuEntry]
+
+    @property
+    def top_text(self) -> str:
+        """str: The hover text, as the game shows it top left (e.g. "Mine Tin rocks")."""
+        if self.top is None:
+            return ""
+        return f"{self.top.option} {self.top.target}".strip()
+
+
+def _rect(value: object) -> Optional[Rectangle]:
+    """Turn an `[x, y, w, h]` list into a `Rectangle`, or None."""
+    if not isinstance(value, list) or len(value) != 4:
+        return None
+    return Rectangle(*(int(v) for v in value))
+
+
+def _menu_entry(value: Dict) -> MenuEntry:
+    return MenuEntry(
+        str(value.get("option", "")),
+        str(value.get("target", "")),
+        _rect(value.get("rect")),
+    )
 
 
 def _tile(value: object) -> Optional[Tile]:
@@ -142,6 +194,7 @@ class BridgeAPI:
         # snapshot states it. A stated wish rather than a one-off command, so a reply
         # that goes astray is simply corrected by the next one.
         self._wanted_profile: Optional[Dict[str, str]] = None
+        self._wanted_objects: List[int] = []
         self._disabled = False
         self._lock = threading.Lock()
         self._server = None
@@ -156,8 +209,9 @@ class BridgeAPI:
             """Store the pushed snapshot and stamp its arrival time.
 
             Returns:
-                Tuple: The JSON reply naming the wanted profile, or an informational
-                    message on a rejected snapshot, and the HTTP status code.
+                Tuple: The JSON reply naming the wanted profile and objects, or an
+                    informational message on a rejected snapshot, and the HTTP
+                    status code.
             """
             if self._disabled:
                 return "Bridge disabled by a schema mismatch.", 409
@@ -179,7 +233,8 @@ class BridgeAPI:
                 elif self._idle_since is None:
                     self._idle_since = self._arrived_at
                 wanted = self._wanted_profile
-            return jsonify(profile=wanted), 200
+                objects = self._wanted_objects
+            return jsonify(profile=wanted, objects=objects), 200
 
         if start:
             self._serve()
@@ -328,6 +383,20 @@ class BridgeAPI:
         """Stop asking for a profile. The client stays on whichever it has."""
         with self._lock:
             self._wanted_profile = None
+
+    def request_objects(self, ids: Iterable[int]) -> None:
+        """Ask the plug-in to report these game object IDs in every snapshot.
+
+        Args:
+            ids (Iterable[int]): The object IDs, e.g. the live rocks of one ore.
+        """
+        with self._lock:
+            self._wanted_objects = sorted({int(i) for i in ids})
+
+    def clear_objects(self) -> None:
+        """Stop asking for objects."""
+        with self._lock:
+            self._wanted_objects = []
 
     def _field(self, name: str, sentinel):
         """Return a field of the freshest snapshot, or a sentinel.
@@ -509,6 +578,49 @@ class BridgeAPI:
         if not isinstance(values, list):
             return None
         return [int(v) for v in values]
+
+    @property
+    def objects(self) -> List[SceneObject]:
+        """List[SceneObject]: The requested objects in view, nearest first.
+
+        Empty when none are in view, when nothing is requested, when the feed is
+        stale, or when the plug-in predates this field.
+        """
+        values = self._field("objects", None)
+        if not isinstance(values, list):
+            return []
+        return [
+            SceneObject(
+                int(v["id"]), _tile(v["tile"]), int(v["distance"]), Polygon(v["hull"])
+            )
+            for v in values
+        ]
+
+    @property
+    def inventory_slots(self) -> Optional[List[Rectangle]]:
+        """Optional[List[Rectangle]]: Each of the 28 inventory slots on screen.
+
+        None while the inventory tab is hidden, when the feed is stale, or when the
+        plug-in predates this field.
+        """
+        values = self._field("inventory_slots", None)
+        if not isinstance(values, list) or len(values) != 28:
+            return None
+        rects = [_rect(v) for v in values]
+        return None if None in rects else rects
+
+    @property
+    def menu(self) -> Optional[Menu]:
+        """Optional[Menu]: The client menu, or None if unknown."""
+        value = self._field("menu", None)
+        if not isinstance(value, dict):
+            return None
+        top = value.get("top")
+        return Menu(
+            bool(value.get("open", False)),
+            _menu_entry(top) if isinstance(top, dict) else None,
+            [_menu_entry(e) for e in value.get("entries") or []],
+        )
 
     @property
     def active_profile(self) -> Optional[str]:

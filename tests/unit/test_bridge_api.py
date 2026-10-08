@@ -18,11 +18,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 from utilities.api.bridge_api import (  # noqa: E402
     BridgeAPI,
     GroundItem,
+    Menu,
     Npc,
+    SceneObject,
     Target,
 )
 
-FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "snapshot_v1.json"
+FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "snapshot_v2.json"
 
 
 def payload() -> dict:
@@ -72,20 +74,30 @@ class BridgeAPITest(unittest.TestCase):
         self.assertIsNone(self.bridge.fire)
 
     def test_replies_with_no_profile_by_default(self):
-        self.assertEqual(self.post(payload()).get_json(), {"profile": None})
+        self.assertEqual(
+            self.post(payload()).get_json(), {"profile": None, "objects": []}
+        )
 
     def test_replies_with_the_requested_profile(self):
         self.bridge.request_profile("RuneColor - X", "C:/profiles/x.properties")
         reply = self.post(payload()).get_json()
         self.assertEqual(
             reply,
-            {"profile": {"name": "RuneColor - X", "path": "C:/profiles/x.properties"}},
+            {
+                "profile": {
+                    "name": "RuneColor - X",
+                    "path": "C:/profiles/x.properties",
+                },
+                "objects": [],
+            },
         )
 
     def test_a_cleared_profile_is_no_longer_requested(self):
         self.bridge.request_profile("RuneColor - X", "C:/profiles/x.properties")
         self.bridge.clear_profile()
-        self.assertEqual(self.post(payload()).get_json(), {"profile": None})
+        self.assertEqual(
+            self.post(payload()).get_json(), {"profile": None, "objects": []}
+        )
 
     def test_exposes_the_active_profile(self):
         self.post(dict(payload(), profile="RuneColor - X"))
@@ -136,6 +148,54 @@ class BridgeAPITest(unittest.TestCase):
     def test_reports_no_inventory_before_any_snapshot(self):
         self.assertIsNone(self.bridge.inventory)
 
+    def test_exposes_the_requested_objects(self):
+        self.post(payload())
+        (rock,) = self.bridge.objects
+        self.assertIsInstance(rock, SceneObject)
+        self.assertEqual(
+            (rock.id, rock.tile, rock.distance), (11361, (3229, 3148, 0), 2)
+        )
+        self.assertEqual(rock.hull.points[0], (812, 401))
+
+    def test_reports_no_objects_from_an_older_plugin(self):
+        self.post({k: v for k, v in payload().items() if k != "objects"})
+        self.assertEqual(self.bridge.objects, [])
+
+    def test_exposes_the_inventory_slots(self):
+        self.post(payload())
+        slots = self.bridge.inventory_slots
+        self.assertEqual(len(slots), 28)
+        self.assertEqual((slots[0].left, slots[0].top), (560, 210))
+        self.assertEqual((slots[27].width, slots[27].height), (36, 32))
+
+    def test_reports_no_inventory_slots_while_hidden(self):
+        self.post(dict(payload(), inventory_slots=None))
+        self.assertIsNone(self.bridge.inventory_slots)
+
+    def test_exposes_the_menu(self):
+        self.post(payload())
+        menu = self.bridge.menu
+        self.assertIsInstance(menu, Menu)
+        self.assertTrue(menu.open)
+        self.assertEqual(menu.top_text, "Mine Tin rocks")
+        self.assertEqual(menu.entries[1].option, "Cancel")
+        self.assertEqual(menu.entries[0].rect.left, 280)
+
+    def test_reports_no_menu_before_any_snapshot(self):
+        self.assertIsNone(self.bridge.menu)
+
+    def test_replies_with_the_requested_objects(self):
+        self.bridge.request_objects([11361, 11360, 11361])
+        self.assertEqual(
+            self.post(payload()).get_json(),
+            {"profile": None, "objects": [11360, 11361]},
+        )
+
+    def test_cleared_objects_are_no_longer_requested(self):
+        self.bridge.request_objects([11361])
+        self.bridge.clear_objects()
+        self.assertEqual(self.post(payload()).get_json()["objects"], [])
+
     def test_reports_unknown_idle_before_any_snapshot(self):
         self.assertIsNone(self.bridge.animation)
         self.assertIsNone(self.bridge.idle)
@@ -178,7 +238,7 @@ class BridgeAPITest(unittest.TestCase):
 
     def test_rejects_a_mismatched_schema_and_stays_disabled(self):
         body = payload()
-        body["schema"] = 2
+        body["schema"] = 3
         self.assertEqual(self.post(body).status_code, 409)
         self.assertFalse(self.bridge.is_fresh())
         # A stale jar disables the bridge for the session rather than letting a
@@ -196,7 +256,7 @@ class BridgeAPITest(unittest.TestCase):
     def test_serves_partial_fields_when_logged_out(self):
         self.post(
             {
-                "schema": 1,
+                "schema": 2,
                 "tick": 7,
                 "sent_at": 99,
                 "game_state": "LOGIN_SCREEN",
