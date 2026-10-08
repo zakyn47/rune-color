@@ -30,10 +30,10 @@ final class HullOutline {
         if (hull.size() < 3) {
             return null;
         }
-        int step = (hull.size() + MAX_POINTS - 1) / MAX_POINTS;
+        int count = Math.min(hull.size(), MAX_POINTS);
         List<int[]> outline = new ArrayList<>();
-        for (int i = 0; i < hull.size(); i += step) {
-            Point p = hull.get(i);
+        for (int i = 0; i < count; i++) {
+            Point p = hull.get(i * hull.size() / count);
             outline.add(new int[] {origin.x + p.x, origin.y + p.y});
         }
         return outline.size() < 3 ? null : outline;
