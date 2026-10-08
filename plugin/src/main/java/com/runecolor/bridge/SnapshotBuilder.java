@@ -253,7 +253,7 @@ public final class SnapshotBuilder {
         return nearestFirst(nearby, MAX_NPCS);
     }
 
-    private static <T> List<T> nearestFirst(List<Nearby<T>> nearby, int max) {
+    static <T> List<T> nearestFirst(List<Nearby<T>> nearby, int max) {
         nearby.sort(Comparator.comparingInt(n -> n.distance));
         List<T> nearest = new ArrayList<>();
         for (Nearby<T> n : nearby.subList(0, Math.min(max, nearby.size()))) {
@@ -283,12 +283,12 @@ public final class SnapshotBuilder {
         return composition == null ? null : composition.getName();
     }
 
-    private static Snapshot.Point point(WorldPoint tile) {
+    static Snapshot.Point point(WorldPoint tile) {
         return new Snapshot.Point(tile.getX(), tile.getY(), tile.getPlane());
     }
 
     /** Something near the player, with its distance, for sorting. */
-    private static final class Nearby<T> {
+    static final class Nearby<T> {
         final int distance;
         final T value;
 

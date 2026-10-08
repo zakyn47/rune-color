@@ -192,4 +192,19 @@ public final class Snapshot {
             this.busy = busy;
         }
     }
+
+    /** A game object the bot asked for, with its clickbox outline on screen. */
+    public static final class SceneObject {
+        public final int id;
+        public final Point tile;
+        public final int distance;
+        public final List<int[]> hull;
+
+        SceneObject(int id, Point tile, int distance, List<int[]> hull) {
+            this.id = id;
+            this.tile = tile;
+            this.distance = distance;
+            this.hull = hull;
+        }
+    }
 }
