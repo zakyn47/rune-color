@@ -16,6 +16,10 @@ public class ProfileSwitcherTest {
     private static final String WANT_X =
             "{\"profile\":{\"name\":\"RuneColor - X\",\"path\":\"C:/p/x.properties\"}}";
 
+    private static ProfileRequest wanted(String body) {
+        return BotReply.parse(new Gson(), body).profile;
+    }
+
     private static final class FakeStore implements ProfileStore {
         String active = "Mine";
         boolean fail;
@@ -39,7 +43,7 @@ public class ProfileSwitcherTest {
     @Test
     public void switchesWhenTheWantedProfileIsNotActive() {
         FakeStore store = new FakeStore();
-        new ProfileSwitcher(store, Runnable::run, new Gson()).onReply(WANT_X);
+        new ProfileSwitcher(store, Runnable::run).onProfile(wanted(WANT_X));
         assertEquals(1, store.applied.size());
         assertTrue(store.applied.get(0).startsWith("RuneColor - X@"));
         assertEquals("RuneColor - X", store.active);
@@ -49,21 +53,21 @@ public class ProfileSwitcherTest {
     public void doesNothingWhenTheProfileIsAlreadyActive() {
         FakeStore store = new FakeStore();
         store.active = "RuneColor - X";
-        new ProfileSwitcher(store, Runnable::run, new Gson()).onReply(WANT_X);
+        new ProfileSwitcher(store, Runnable::run).onProfile(wanted(WANT_X));
         assertTrue(store.applied.isEmpty());
     }
 
     @Test
     public void ignoresANullProfile() {
         FakeStore store = new FakeStore();
-        new ProfileSwitcher(store, Runnable::run, new Gson()).onReply("{\"profile\":null}");
+        new ProfileSwitcher(store, Runnable::run).onProfile(wanted("{\"profile\":null}"));
         assertTrue(store.applied.isEmpty());
     }
 
     @Test
     public void ignoresAReplyFromABotThatPredatesProfiles() {
         FakeStore store = new FakeStore();
-        new ProfileSwitcher(store, Runnable::run, new Gson()).onReply("Snapshot received.");
+        new ProfileSwitcher(store, Runnable::run).onProfile(wanted("Snapshot received."));
         assertTrue(store.applied.isEmpty());
     }
 
@@ -71,13 +75,13 @@ public class ProfileSwitcherTest {
     public void doesNotRetryAFailedFileUntilTheRequestChanges() {
         FakeStore store = new FakeStore();
         store.fail = true;
-        ProfileSwitcher switcher = new ProfileSwitcher(store, Runnable::run, new Gson());
-        switcher.onReply(WANT_X);
-        switcher.onReply(WANT_X);
+        ProfileSwitcher switcher = new ProfileSwitcher(store, Runnable::run);
+        switcher.onProfile(wanted(WANT_X));
+        switcher.onProfile(wanted(WANT_X));
         assertEquals(1, store.applied.size());
 
-        switcher.onReply("{\"profile\":null}");
-        switcher.onReply(WANT_X);
+        switcher.onProfile(wanted("{\"profile\":null}"));
+        switcher.onProfile(wanted(WANT_X));
         assertEquals(2, store.applied.size());
     }
 
@@ -85,9 +89,9 @@ public class ProfileSwitcherTest {
     public void ignoresRepeatsWhileASwitchIsInFlight() {
         FakeStore store = new FakeStore();
         Queue<Runnable> pending = new ArrayDeque<>();
-        ProfileSwitcher switcher = new ProfileSwitcher(store, pending::add, new Gson());
-        switcher.onReply(WANT_X);
-        switcher.onReply(WANT_X);
+        ProfileSwitcher switcher = new ProfileSwitcher(store, pending::add);
+        switcher.onProfile(wanted(WANT_X));
+        switcher.onProfile(wanted(WANT_X));
         assertEquals(1, pending.size());
         pending.remove().run();
         assertEquals(1, store.applied.size());

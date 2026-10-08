@@ -1,6 +1,5 @@
 package com.runecolor.bridge;
 
-import com.google.gson.Gson;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.File;
@@ -19,19 +18,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public class ProfileSwitcher {
     private final ProfileStore store;
     private final Executor executor;
-    private final Gson gson;
     private final AtomicBoolean inFlight = new AtomicBoolean(false);
     private volatile ProfileRequest failed;
 
-    public ProfileSwitcher(ProfileStore store, Executor executor, Gson gson) {
+    public ProfileSwitcher(ProfileStore store, Executor executor) {
         this.store = store;
         this.executor = executor;
-        this.gson = gson;
     }
 
-    /** Act on one reply body. Never throws: it runs on the publisher thread. */
-    public void onReply(String body) {
-        ProfileRequest wanted = parse(body);
+    /** Act on the profile one reply asked for. Never throws: it runs on the publisher thread. */
+    public void onProfile(ProfileRequest wanted) {
         if (wanted != null && wanted.equals(failed)) {
             return;
         }
@@ -51,15 +47,6 @@ public class ProfileSwitcher {
         }
     }
 
-    private ProfileRequest parse(String body) {
-        try {
-            Reply reply = gson.fromJson(body, Reply.class);
-            return reply == null ? null : reply.profile;
-        } catch (RuntimeException e) {
-            return null;
-        }
-    }
-
     private void apply(ProfileRequest wanted) {
         try {
             store.apply(wanted.name, new File(wanted.path));
@@ -73,9 +60,5 @@ public class ProfileSwitcher {
         } finally {
             inFlight.set(false);
         }
-    }
-
-    private static final class Reply {
-        ProfileRequest profile;
     }
 }
