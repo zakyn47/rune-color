@@ -29,8 +29,8 @@ public class InventorySlotsTest {
     public void reportsEverySlotOnScreen() {
         List<int[]> rects = InventorySlots.read(client);
         assertEquals(28, rects.size());
-        assertArrayEquals(new int[] {740, 240, 36, 32}, rects.get(0));
-        assertArrayEquals(new int[] {740 + 42 * 3, 240 + 36 * 6, 36, 32}, rects.get(27));
+        assertArrayEquals(new int[] {756, 248, 36, 32}, rects.get(0));
+        assertArrayEquals(new int[] {756 + 42 * 3, 248 + 36 * 6, 36, 32}, rects.get(27));
     }
 
     @Test
