@@ -162,6 +162,22 @@ public class SnapshotBuilderTest {
     }
 
     /**
+     * A field that fails to build must not cost the bot the rest of the snapshot:
+     * {@link MenuReader#read} throwing must leave {@code menu} null without
+     * disturbing any other field.
+     */
+    @Test
+    public void aFailingFieldIsLeftNullWithoutLosingTheRestOfTheSnapshot() {
+        Client client = loggedInClient();
+        Mockito.when(client.getMenuEntries()).thenThrow(new RuntimeException("boom"));
+
+        Snapshot snapshot = SnapshotBuilder.build(client, 0L, null, Collections.emptySet());
+
+        assertNull(snapshot.menu);
+        assertEquals(42, snapshot.hitpoints.current);
+    }
+
+    /**
      * {@code Client#getEnergy()} in RuneLite 1.12.38 is documented (see the
      * evidence comment on {@link SnapshotBuilder#normalizeEnergy}) to always return
      * "the run energy in units of 1/100th of an percentage" — a 0-10000 scale, not a

@@ -4,6 +4,7 @@ import java.awt.Canvas;
 import java.awt.IllegalComponentStateException;
 import java.awt.Rectangle;
 import java.awt.Shape;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Actor;
 import net.runelite.api.GameObject;
@@ -35,6 +36,7 @@ import java.util.function.Supplier;
  * <p>This class performs no I/O and starts no threads, so it must be called on the
  * client thread, where the {@code Client} API is safe to touch.
  */
+@Slf4j
 public final class SnapshotBuilder {
     public static final int SCHEMA_VERSION = 2;
 
@@ -106,16 +108,18 @@ public final class SnapshotBuilder {
                 groundItems(client, player),
                 inventory(client),
                 npcs(client, player),
-                orNull(() -> ObjectScanner.scan(client, player, objectIds)),
-                orNull(() -> InventorySlots.read(client)),
-                orNull(() -> MenuReader.read(client)));
+                orNull("objects", () -> ObjectScanner.scan(client, player, objectIds)),
+                orNull("inventorySlots", () -> InventorySlots.read(client)),
+                orNull("menu", () -> MenuReader.read(client)));
     }
 
     /** A new field that fails to build must not cost the bot the rest of the snapshot. */
-    private static <T> T orNull(Supplier<T> read) {
+    private static <T> T orNull(String field, Supplier<T> read) {
         try {
             return read.get();
         } catch (RuntimeException e) {
+            // Debug, not warn: a field that keeps failing would otherwise log every tick.
+            log.debug("Left {} out of a snapshot: {}", field, e.toString());
             return null;
         }
     }
