@@ -17,6 +17,8 @@ LOOT_APPEAR_TIMEOUT = 3  # Drops appear a tick or two after the death.
 TAKE_TIMEOUT = 5  # Includes walking to the item.
 BURY_TIMEOUT = 3
 OPEN_TIMEOUT = 5  # Seconds for a clicked gate to swing open.
+MENU_TIMEOUT = 2  # Seconds for a right-click menu to show up in a snapshot.
+REST_TIMEOUT = 600  # Hitpoints regenerate about one a minute.
 GATE_AIM_TRIES = 4
 WALK_TIMEOUT = 60  # A walk this long is stuck, most likely at the closed gate.
 HOME_SQUARE = 4  # Tiles; arriving anywhere in this square around home will do.
@@ -99,6 +101,7 @@ class OSRSCowFighter(OSRSBot):
                 self.potentially_take_a_break()
             self.loot()
             self.bury_when_full()
+            self.rest_if_hurt()
             self.fight()
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
@@ -270,11 +273,40 @@ class OSRSCowFighter(OSRSBot):
             seen = menu.top_text if menu is not None else "nothing"
             self.log_msg(f"Aimed at the {item.name}, but the cursor reads {seen!r}.")
             return False
-        self.mouse.click()
+        # Cows drop bones, cowhide and beef on one tile, and a left-click takes
+        # whichever is on top, so only click when that is the bones.
+        menu = self.bridge.menu
+        if menu is not None and menu.top_text == f"Take {item.name}":
+            self.mouse.click()
+        elif not self._take_bones_from_menu(item):
+            return False
         if not self._wait_until(lambda: self.bridge.inventory != before, TAKE_TIMEOUT):
             return False
         self.bones_taken += 1
         return True
+
+    def _take_bones_from_menu(self, item: GroundItem) -> bool:
+        """Right-click the pile and choose "Take <item>" from the menu.
+
+        Returns:
+            bool: True if the entry was clicked; False after cancelling the menu.
+        """
+        self.mouse.right_click()
+        if not self._wait_until(
+            lambda: self.bridge.menu is not None and self.bridge.menu.open,
+            MENU_TIMEOUT,
+        ):
+            return False
+        entries = self.bridge.menu.entries
+        entry = next(
+            (e for e in entries if e.option == "Take" and e.target == item.name),
+            None,
+        ) or next((e for e in entries if e.option == "Cancel"), None)
+        if entry is None or entry.rect is None:
+            return False
+        self.mouse.move_to(entry.rect.random_point())
+        self.mouse.click()
+        return entry.option == "Take"
 
     def _aim_at_item(self, item: GroundItem) -> bool:
         """Point at an item until the hover text reads Take, aiming twice at most.
@@ -297,6 +329,14 @@ class OSRSCowFighter(OSRSBot):
             if item is None:
                 return False
         return False
+
+    def rest_if_hurt(self) -> None:
+        """Stop fighting while hitpoints are low, until they regenerate."""
+        hitpoints = self.bridge.hitpoints
+        if not rules.needs_rest(hitpoints):
+            return
+        self.log_msg(f"Hitpoints {hitpoints[0]}/{hitpoints[1]}. Resting...")
+        self._wait_until(lambda: rules.rested(self.bridge.hitpoints), REST_TIMEOUT)
 
     def bury_when_full(self) -> None:
         """Once the inventory has no room left, bury the bones and drop the cowhides."""

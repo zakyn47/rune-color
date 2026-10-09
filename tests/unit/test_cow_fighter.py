@@ -13,7 +13,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from model.osrs.cow_fighter import OSRSCowFighter  # noqa: E402
 import model.osrs.cow_fighter_rules as rules  # noqa: E402
-from utilities.api.bridge_api import GroundItem, Npc, Target  # noqa: E402
+from utilities.api.bridge_api import (  # noqa: E402
+    GroundItem,
+    Menu,
+    MenuEntry,
+    Npc,
+    Target,
+)
+from utilities.geometry import Rectangle  # noqa: E402
 
 EMPTY = [-1] * 28
 
@@ -27,7 +34,8 @@ class FakeBridge:
         self.inventory_slots = None
         self.game_state = "LOGGED_IN"
         self.world_point = (3256, 3272, 0)
-        self.menu = None
+        self._hitpoints = [(15, 15)]
+        self.menu = hover("Take Bones")
         self.objects = []
         self.requested = None
 
@@ -38,6 +46,16 @@ class FakeBridge:
         self.requested = None
 
     @property
+    def hitpoints(self):
+        if len(self._hitpoints) > 1:
+            return self._hitpoints.pop(0)
+        return self._hitpoints[0]
+
+    @hitpoints.setter
+    def hitpoints(self, value):
+        self._hitpoints = [value]
+
+    @property
     def target(self):
         return self._targets.pop(0) if len(self._targets) > 1 else self._targets[0]
 
@@ -46,6 +64,8 @@ class FakeMouse:
     def __init__(self, on_click):
         self.on_click = on_click
         self.clicks = 0
+        self.right_clicks = 0
+        self.on_right_click = lambda: None
         self.moves = []
 
     def move_to(self, point, **kwargs):
@@ -54,6 +74,10 @@ class FakeMouse:
     def click(self):
         self.clicks += 1
         self.on_click()
+
+    def right_click(self, force_delay=False):
+        self.right_clicks += 1
+        self.on_right_click()
 
 
 class FakeFighter:
@@ -73,6 +97,8 @@ class FakeFighter:
     _aim_at_item = OSRSCowFighter._aim_at_item
     _aim_at_gate = OSRSCowFighter._aim_at_gate
     _here = OSRSCowFighter._here
+    _take_bones_from_menu = OSRSCowFighter._take_bones_from_menu
+    rest_if_hurt = OSRSCowFighter.rest_if_hurt
     game_tick = 0.003
 
     def __init__(self, bridge, on_click=lambda: None, says_take=True):
@@ -202,6 +228,103 @@ class LootTest(unittest.TestCase):
         bot.loot()
         self.assertEqual(bot.mouse.clicks, 0)
         self.assertEqual(bot.bones_taken, 0)
+
+
+def hover(text):
+    option, _, target = text.partition(" ")
+    return Menu(False, MenuEntry(option, target, None), [])
+
+
+def row(option, target, top):
+    return MenuEntry(option, target, Rectangle(300, top, 120, 15))
+
+
+class PileTest(unittest.TestCase):
+    """Cows drop bones, cowhide and beef on one tile; a left-click takes the top one."""
+
+    def bones(self):
+        return GroundItem(rules.BONES, "Bones", 1, (10, 10, 0), (300, 200))
+
+    def fighter(self, bridge):
+        def picked_up():
+            bridge.ground_items = []
+            bridge.inventory = [rules.BONES] + [-1] * 27
+
+        bot = FakeFighter(bridge, on_click=picked_up)
+        bot.death_tile = (10, 10, 0)
+        return bot
+
+    def test_left_clicks_when_bones_are_on_top(self):
+        bridge = FakeBridge(ground_items=[self.bones()])
+        bridge.menu = hover("Take Bones")
+        bot = self.fighter(bridge)
+        bot.loot()
+        self.assertEqual((bot.mouse.clicks, bot.mouse.right_clicks), (1, 0))
+        self.assertEqual(bot.bones_taken, 1)
+
+    def test_picks_bones_from_the_menu_when_a_cowhide_is_on_top(self):
+        bridge = FakeBridge(ground_items=[self.bones()])
+        bridge.menu = hover("Take Cowhide")
+        bot = self.fighter(bridge)
+        bones_row = row("Take", "Bones", 129)
+
+        def menu_opened():
+            bridge.menu = Menu(
+                True,
+                MenuEntry("Take", "Cowhide", None),
+                [row("Take", "Cowhide", 114), bones_row, row("Cancel", "", 144)],
+            )
+
+        bot.mouse.on_right_click = menu_opened
+        bot.loot()
+        self.assertEqual(bot.mouse.right_clicks, 1)
+        self.assertEqual(bot.mouse.clicks, 1)
+        clicked = bot.mouse.moves[-1]
+        self.assertTrue(129 <= clicked.y < 144)
+        self.assertEqual(bot.bones_taken, 1)
+
+    def test_cancels_the_menu_when_it_holds_no_bones(self):
+        bridge = FakeBridge(ground_items=[self.bones()])
+        bridge.menu = hover("Take Cowhide")
+        bot = FakeFighter(bridge)
+        bot.death_tile = (10, 10, 0)
+
+        def menu_opened():
+            bridge.menu = Menu(
+                True,
+                MenuEntry("Take", "Cowhide", None),
+                [row("Take", "Cowhide", 114), row("Cancel", "", 129)],
+            )
+
+        bot.mouse.on_right_click = menu_opened
+        bot.loot()
+        self.assertEqual(bot.mouse.clicks, 1)
+        self.assertTrue(129 <= bot.mouse.moves[-1].y < 144)
+        self.assertEqual(bot.bones_taken, 0)
+
+
+class RestTest(unittest.TestCase):
+    def test_rests_until_hitpoints_recover(self):
+        bridge = FakeBridge()
+        bridge._hitpoints = [(5, 15), (5, 15), (7, 15), (10, 15)]
+        bot = FakeFighter(bridge)
+        bot.rest_if_hurt()
+        self.assertTrue(any("Resting" in m for m in bot.messages))
+        self.assertEqual(bridge._hitpoints, [(10, 15)])
+
+    def test_fights_on_while_healthy(self):
+        bot = FakeFighter(FakeBridge())
+        bot.bridge.hitpoints = (6, 15)
+        bot.rest_if_hurt()
+        self.assertEqual(bot.messages, [])
+
+    def test_rule(self):
+        self.assertTrue(rules.needs_rest((5, 15)))
+        self.assertFalse(rules.needs_rest((6, 15)))
+        self.assertFalse(rules.needs_rest((-1, -1)))
+        self.assertTrue(rules.rested((10, 15)))
+        self.assertTrue(rules.rested((7, 7)))
+        self.assertFalse(rules.rested((9, 15)))
 
 
 class AttackTest(unittest.TestCase):
