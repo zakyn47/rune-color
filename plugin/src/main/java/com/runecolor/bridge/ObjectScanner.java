@@ -10,10 +10,15 @@ import net.runelite.api.GameObject;
 import net.runelite.api.Player;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
+import net.runelite.api.TileObject;
+import net.runelite.api.WallObject;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 
-/** Finds the game objects the bot asked for near the player. Client thread only. */
+/**
+ * Finds the objects the bot asked for near the player: game objects such as rocks,
+ * and wall objects such as gates and doors. Client thread only.
+ */
 final class ObjectScanner {
     static final int RADIUS = 15;
     static final int MAX_OBJECTS = 10;
@@ -42,30 +47,36 @@ final class ObjectScanner {
                     continue;
                 }
                 int distance = Math.max(Math.abs(dx), Math.abs(dy));
-                for (GameObject object : tiles[x][y].getGameObjects()) {
-                    Snapshot.SceneObject found = sceneObject(object, x, y, ids, origin, distance);
-                    if (found != null) {
-                        nearby.add(new SnapshotBuilder.Nearby<>(distance, found));
+                Tile tile = tiles[x][y];
+                GameObject[] objects = tile.getGameObjects();
+                if (objects != null) {
+                    for (GameObject object : objects) {
+                        if (object != null && anchoredAt(object, x, y)) {
+                            add(object, ids, origin, distance, nearby);
+                        }
                     }
+                }
+                WallObject wall = tile.getWallObject();
+                if (wall != null) {
+                    add(wall, ids, origin, distance, nearby);
                 }
             }
         }
         return SnapshotBuilder.nearestFirst(nearby, MAX_OBJECTS);
     }
 
-    private static Snapshot.SceneObject sceneObject(GameObject object, int x, int y,
-                                                    Set<Integer> ids, Point origin,
-                                                    int distance) {
-        if (object == null || !ids.contains(object.getId()) || !anchoredAt(object, x, y)) {
-            return null;
+    private static void add(TileObject object, Set<Integer> ids, Point origin, int distance,
+                            List<SnapshotBuilder.Nearby<Snapshot.SceneObject>> nearby) {
+        if (!ids.contains(object.getId())) {
+            return;
         }
         List<int[]> hull = HullOutline.of(object.getClickbox(), origin);
         WorldPoint tile = object.getWorldLocation();
         if (hull == null || tile == null) {
-            return null;
+            return;
         }
-        return new Snapshot.SceneObject(object.getId(), SnapshotBuilder.point(tile),
-                distance, hull);
+        nearby.add(new SnapshotBuilder.Nearby<>(distance, new Snapshot.SceneObject(
+                object.getId(), SnapshotBuilder.point(tile), distance, hull)));
     }
 
     /** A large object, a tree say, sits on several tiles; report it from one of them. */

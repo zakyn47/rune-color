@@ -57,6 +57,10 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
     # actual game tick is 0.6 seconds, but 3 additional milliseconds are included to
     # account for latency.
     game_tick = 0.603
+    # The game refuses to log out until 10 s after the last combat, so a refused
+    # click is retried this often, for at most LOGOUT_TIMEOUT seconds.
+    LOGOUT_RETRY_SECONDS = 3
+    LOGOUT_TIMEOUT = 30
 
     def __init__(
         self,
@@ -97,6 +101,28 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
     def detach_bridge(self) -> None:
         """Stop preferring plug-in values, reverting every read to OCR."""
         self.bridge = None
+
+    def is_in_game_view(self, point: Point) -> bool:
+        """Whether a screen point lies in the game view, where a click reaches the world.
+
+        The plug-in reports objects and NPCs even when the camera has them past the
+        edge of the canvas, and a click there would land on another window.
+
+        Args:
+            point (Point): A screen point.
+
+        Returns:
+            bool: True if it is inside the game view.
+        """
+        view = self.win.game_view
+        return (
+            view.left <= point.x < view.left + view.width
+            and view.top <= point.y < view.top + view.height
+        )
+
+    def visible_objects(self) -> List[SceneObject]:
+        """Return the requested objects whose outline is in the game view."""
+        return [o for o in self.bridge.objects if self.is_in_game_view(o.hull.center)]
 
     def move_to_scene_object(self, obj: SceneObject) -> None:
         """Move the mouse to a random point on a scene object the bridge reported.
@@ -2483,8 +2509,26 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         self.sleep()
         self.mouse.move_rel(x=0, y=-53, dx=5, dy=5, mouseSpeed="fastest")
         self.mouse.click()
+        if self.bridge is not None:
+            # The panel stays open after a refusal, so the cursor is still on the
+            # button and only needs to click again.
+            end_time = time.time() + self.LOGOUT_TIMEOUT
+            while not self._logged_out():
+                if time.time() > end_time:
+                    self.log_msg("Could not log out; the game kept us in.")
+                    return
+                self.mouse.click()
         self.log_msg("Logged out.", overwrite=True)
         self.sleep()
+
+    def _logged_out(self) -> bool:
+        """Wait a little for the bridge to report that we left the game."""
+        end_time = time.time() + self.LOGOUT_RETRY_SECONDS
+        while time.time() < end_time:
+            if self.bridge.game_state not in ("LOGGED_IN", ""):
+                return True
+            time.sleep(self.game_tick / 3)
+        return False
 
     def logout_if_greater_than(self, dt: Union[float, int], start: Union[float, int]):
         """Logout if the login time exceeds the specified duration."""

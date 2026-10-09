@@ -4,10 +4,11 @@ from typing import Callable, Optional
 import model.osrs.cow_fighter_rules as rules
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
-from utilities.api.bridge_api import GroundItem, Tile
+from utilities.api.bridge_api import GroundItem, SceneObject, Tile
 from utilities.geometry import Point
+from utilities.walker import Walker
 
-BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in's first inventory.
+BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in to be heard from.
 ATTACK_TRIES = 3  # Cows to try before looking elsewhere.
 AIM_PASSES = 2  # Aim, then correct for where the cow walked meanwhile.
 ATTACK_TIMEOUT = 5  # Seconds for a clicked cow to become our target.
@@ -15,6 +16,11 @@ KILL_TIMEOUT = 60
 LOOT_APPEAR_TIMEOUT = 3  # Drops appear a tick or two after the death.
 TAKE_TIMEOUT = 5  # Includes walking to the item.
 BURY_TIMEOUT = 3
+OPEN_TIMEOUT = 5  # Seconds for a clicked gate to swing open.
+MENU_TIMEOUT = 2  # Seconds for a right-click menu to show up in a snapshot.
+GATE_AIM_TRIES = 4
+WALK_TIMEOUT = 60  # A walk this long is stuck, most likely at the closed gate.
+HOME_SQUARE = 4  # Tiles; arriving anywhere in this square around home will do.
 MAX_TAKES = 5  # Bounds the loot loop if an item can never be taken.
 
 
@@ -24,13 +30,15 @@ class OSRSCowFighter(OSRSBot):
     def __init__(self) -> None:
         bot_title = "Cow Fighter"
         description = (
-            "Kill cyan-tagged cows, take the bones (and any coins) they drop, bury the"
-            " bones, and repeat. Hitpoints are not watched.\n\n"
+            "Kill cows, take the bones they drop, and once the inventory is full bury"
+            " them and drop any cowhides. Repeat. Stays near where it starts, walking"
+            " back (and opening the field's west gate) if it drifts away. Hitpoints"
+            " are not watched: after a death it walks back from Lumbridge.\n\n"
             "Setup:\n"
             "- Stand in the cow field east of the River Lum, north of Lumbridge castle.\n"
             "- Empty inventory; wield a weapon if you have one.\n"
-            "- The script's RuneLite profile tags cows cyan and shows their"
-            " bones and coins; the bot aims with the plug-in's live positions.\n"
+            "- The bot aims with the plug-in's live positions.\n"
+            "- Turn on shift-click dropping in the game's settings (for cowhides).\n"
             "- Requires the RuneColor Bridge plug-in (plugin/README.md).\n"
             "- Stretched Mode off, Resizable - Classic layout."
         )
@@ -39,9 +47,11 @@ class OSRSCowFighter(OSRSBot):
         self.take_breaks = False
         self.relog_time = rd.biased_trunc_norm_samp(18000, 21000)
         self.death_tile: Optional[Tile] = None
+        self.home: Optional[Tile] = None
+        self.last_combat: Optional[float] = None
         self.kills = 0
         self.bones_buried = 0
-        self.coins_looted = 0
+        self.bones_taken = 0
 
     def create_options(self) -> None:
         """Add bot options. See `utilities.options_builder` for more."""
@@ -72,10 +82,8 @@ class OSRSCowFighter(OSRSBot):
 
     def main_loop(self) -> None:
         """Fight, loot and bury until the run time is up."""
-        if not self._wait_until(
-            lambda: self.bridge is not None and self.bridge.inventory is not None,
-            BRIDGE_TIMEOUT,
-        ):
+        # Not the inventory: the game never sends an empty one.
+        if not self._wait_until(self.bridge_is_heard, BRIDGE_TIMEOUT):
             self.log_msg(
                 "The Cow Fighter needs the RuneColor Bridge plug-in. Turn it on"
                 " in RuneLite and try again."
@@ -84,22 +92,29 @@ class OSRSCowFighter(OSRSBot):
             return
         self.log_msg(f"[START] ({self.run_time // 60}h {self.run_time % 60}m)")
         self.prepare_standard_initial_state()
+        self.home = self.home or self.bridge.world_point
+        if rules.far_from(self._here(), self.home):
+            self.walk_home()
         start_time = time.time()
         end_time = int(self.run_time) * 60
         while time.time() - start_time < end_time:
             if self.take_breaks:
                 self.potentially_take_a_break()
             self.loot()
-            self.bury()
+            self.bury_when_full()
             self.fight()
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
         self.update_progress(1)
         self.log_msg(
-            f"Killed {self.kills} cows, buried {self.bones_buried} bones, looted"
-            f" {self.coins_looted} coins."
+            f"Killed {self.kills} cows, took {self.bones_taken} bones and buried"
+            f" {self.bones_buried}."
         )
+        time.sleep(rules.combat_cooldown_left(self.last_combat, time.time()))
         self.logout_and_stop_script("[END]")
+
+    def bridge_is_heard(self) -> bool:
+        return self.bridge is not None and bool(self.bridge.game_state)
 
     def fight(self) -> None:
         """Attack a cow unless one is already our target, then see it die."""
@@ -112,23 +127,80 @@ class OSRSCowFighter(OSRSBot):
 
         Cows wander, so a colour scan of the screen is out of date by the time the
         cursor arrives. The plug-in reports where each one is every tick, and the
-        cursor follows the chosen cow by its index until the mouseover confirms.
+        cursor follows the chosen cow by its index until the hover text confirms.
 
         Returns:
             bool: True once the cow is our target.
         """
         for _ in range(ATTACK_TRIES):
-            candidates = rules.attack_candidates(self.bridge.npcs)
+            candidates = [
+                npc
+                for npc in rules.attack_candidates(self.bridge.npcs)
+                if self.is_in_game_view(Point(*npc.point))
+            ]
             if not candidates:
-                self.log_msg("No free cow in sight. Moving a little...")
-                self.walk_to_random_point_nearby(verbose=False)
+                self.stay_home()
                 return False
             if not self.aim_at(candidates[0].index):
                 continue
-            if not self.get_mouseover_text(contains="Attack"):
+            if not self.wait_for_hover_text("Attack"):
                 continue
             self.mouse.click()
             if self._wait_until(lambda: self.bridge.target is not None, ATTACK_TIMEOUT):
+                return True
+        return False
+
+    def stay_home(self) -> None:
+        """With no free cow in view, go back if we drifted away, or wait for one.
+
+        Clicking somewhere at random to find cows walked the bot out of the field and,
+        once, into a fight with a Man in the farmhouse.
+        """
+        if rules.far_from(self._here(), self.home):
+            self.log_msg("Drifted away from the cows. Walking back...")
+            self.walk_home()
+            return
+        self.sleep(1, 2)
+
+    def walk_home(self) -> None:
+        """Walk back to the home tile, opening the field gate if it blocks the way."""
+        walker = Walker(self, dest_square_side_length=HOME_SQUARE)
+        home = Point(self.home[0], self.home[1])
+        if walker.walk_to(home, host="dax", timeout=WALK_TIMEOUT):
+            return
+        if self.open_gate():
+            walker.walk_to(home, host="dax", timeout=WALK_TIMEOUT)
+
+    def open_gate(self) -> bool:
+        """Open the field gate if it is closed within reach.
+
+        Returns:
+            bool: True once it swung open.
+        """
+        self.bridge.request_objects(rules.GATE_CLOSED)
+        try:
+            self._wait_until(self.visible_objects, self.game_tick * 3)
+            gates = [
+                g for g in self.visible_objects() if g.distance <= rules.GATE_REACH
+            ]
+            if not gates:
+                return False
+            if not self._aim_at_gate(gates[0]):
+                return False
+            self.mouse.click()
+            return self._wait_until(lambda: not self.visible_objects(), OPEN_TIMEOUT)
+        finally:
+            self.bridge.clear_objects()
+
+    def _aim_at_gate(self, gate: SceneObject) -> bool:
+        """Point at the gate until the hover text reads Open.
+
+        Its outline is the convex hull of thin planks, so a random point inside it
+        can land on the gap between them; another point usually hits.
+        """
+        for _ in range(GATE_AIM_TRIES):
+            self.move_to_scene_object(gate)
+            if self.wait_for_hover_text("Open"):
                 return True
         return False
 
@@ -158,12 +230,15 @@ class OSRSCowFighter(OSRSBot):
         end_time = time.time() + timeout
         while time.time() < end_time:
             target = self.bridge.target
+            if target is not None:
+                self.last_combat = time.time()
             if target is not None and target.tile is not None:
                 last_tile = target.tile
             if rules.is_finished(target):
                 # Only a health bar seen at zero is a kill: a target that simply
-                # disappears walked off or was taken by someone else.
-                if target is not None:
+                # disappears walked off or was taken by someone else. And only a cow:
+                # anything else was clicked by mistake.
+                if target is not None and target.name == rules.TARGET_NAME:
                     self.kills += 1
                     self.death_tile = last_tile
                     self.log_msg(f"Killed a {target.name} ({self.kills} so far).")
@@ -171,7 +246,7 @@ class OSRSCowFighter(OSRSBot):
             time.sleep(self.game_tick / 3)
 
     def loot(self) -> None:
-        """Take the bones and coins our last kill dropped."""
+        """Take the bones our last kill dropped."""
         if self.death_tile is None:
             return
         self._wait_until(
@@ -196,26 +271,98 @@ class OSRSCowFighter(OSRSBot):
             bool: True once it reached the inventory.
         """
         before = self.bridge.inventory
-        self.mouse.move_to(Point(*item.point))
-        if not self.get_mouseover_text(contains="Take"):
-            self.log_msg(f"Aimed at the {item.name}, but the cursor doesn't read Take.")
+        if not self._aim_at_item(item):
+            menu = self.bridge.menu
+            seen = menu.top_text if menu is not None else "nothing"
+            self.log_msg(f"Aimed at the {item.name}, but the cursor reads {seen!r}.")
             return False
-        self.mouse.click()
+        # Cows drop bones, cowhide and beef on one tile, and a left-click takes
+        # whichever is on top, so only click when that is the bones.
+        menu = self.bridge.menu
+        if menu is not None and menu.top_text == f"Take {item.name}":
+            self.mouse.click()
+        elif not self._take_bones_from_menu(item):
+            return False
         if not self._wait_until(lambda: self.bridge.inventory != before, TAKE_TIMEOUT):
             return False
-        if item.id == rules.COINS:
-            self.coins_looted += item.quantity
+        self.bones_taken += 1
         return True
+
+    def _take_bones_from_menu(self, item: GroundItem) -> bool:
+        """Right-click the pile and choose "Take <item>" from the menu.
+
+        Returns:
+            bool: True if the entry was clicked; False after cancelling the menu.
+        """
+        self.mouse.right_click()
+        if not self._wait_until(
+            lambda: self.bridge.menu is not None and self.bridge.menu.open,
+            MENU_TIMEOUT,
+        ):
+            return False
+        entries = self.bridge.menu.entries
+        entry = next(
+            (e for e in entries if e.option == "Take" and e.target == item.name),
+            None,
+        ) or next((e for e in entries if e.option == "Cancel"), None)
+        if entry is None or entry.rect is None:
+            return False
+        self.mouse.move_to(entry.rect.random_point())
+        self.mouse.click()
+        if entry.option != "Take":
+            return False
+        self.log_msg(f"Took the {item.name} from the menu; something else lay on top.")
+        return True
+
+    def _aim_at_item(self, item: GroundItem) -> bool:
+        """Point at an item until the hover text reads Take, aiming twice at most.
+
+        The item's screen point comes from a snapshot, and the camera follows us, so
+        if we were still moving the item has since slid across the screen.
+        """
+        for _ in range(AIM_PASSES):
+            self.mouse.move_to(Point(*item.point))
+            if self.wait_for_hover_text("Take"):
+                return True
+            item = next(
+                (
+                    i
+                    for i in self.bridge.ground_items
+                    if i.id == item.id and i.tile == item.tile
+                ),
+                None,
+            )
+            if item is None:
+                return False
+        return False
+
+    def bury_when_full(self) -> None:
+        """Once the inventory has no room left, bury the bones and drop the cowhides."""
+        if rules.is_full(self.bridge.inventory):
+            self.bury()
+            self.drop_cowhides()
+
+    def drop_cowhides(self) -> None:
+        """Shift-click drop every cowhide, leaving everything else alone."""
+        slots = rules.cowhide_slots(self.bridge.inventory)
+        if slots:
+            self.drop_items(slots, verbose=False, rects=self.bridge.inventory_slots)
+            self.log_msg(f"Dropped {len(slots)} cowhides.")
 
     def bury(self) -> None:
         """Bury every bone in the inventory."""
+        rects = self.bridge.inventory_slots or self.win.inventory_slots
         for slot in rules.bone_slots(self.bridge.inventory):
-            self.mouse.move_to(self.win.inventory_slots[slot].random_point())
+            self.mouse.move_to(rects[slot].random_point())
             self.mouse.click()
             if self._wait_until(
                 lambda: self._slot_item(slot) != rules.BONES, BURY_TIMEOUT
             ):
                 self.bones_buried += 1
+
+    def _here(self) -> Optional[Tile]:
+        here = self.bridge.world_point
+        return None if here[0] < 0 else here
 
     def _slot_item(self, slot: int) -> int:
         inventory = self.bridge.inventory

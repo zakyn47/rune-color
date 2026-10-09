@@ -15,9 +15,10 @@ def item(name, tile):
 
 
 class LootTest(unittest.TestCase):
-    def test_takes_bones_and_coins_near_the_kill(self):
-        items = [item("Bones", (10, 10, 0)), item("Coins", (12, 9, 0))]
-        self.assertEqual(rules.loot_to_take(items, (10, 10, 0)), items)
+    def test_takes_only_bones_near_the_kill(self):
+        bones = item("Bones", (10, 10, 0))
+        items = [bones, item("Coins", (12, 9, 0))]
+        self.assertEqual(rules.loot_to_take(items, (10, 10, 0)), [bones])
 
     def test_leaves_other_items_and_distant_drops(self):
         items = [
