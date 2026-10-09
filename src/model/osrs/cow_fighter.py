@@ -29,13 +29,14 @@ class OSRSCowFighter(OSRSBot):
     def __init__(self) -> None:
         bot_title = "Cow Fighter"
         description = (
-            "Kill cows, take the bones they drop, bury them once the inventory is"
-            " full, and repeat. Stays near where it starts, walking back (and opening the field's"
+            "Kill cows, take the bones they drop, and once the inventory is full bury"
+            " them and drop any cowhides. Repeat. Stays near where it starts, walking back (and opening the field's"
             " west gate) if it drifts away. Hitpoints are not watched.\n\n"
             "Setup:\n"
             "- Stand in the cow field east of the River Lum, north of Lumbridge castle.\n"
             "- Empty inventory; wield a weapon if you have one.\n"
             "- The bot aims with the plug-in's live positions.\n"
+            "- Turn on shift-click dropping in the game's settings (for cowhides).\n"
             "- Requires the RuneColor Bridge plug-in (plugin/README.md).\n"
             "- Stretched Mode off, Resizable - Classic layout."
         )
@@ -298,9 +299,17 @@ class OSRSCowFighter(OSRSBot):
         return False
 
     def bury_when_full(self) -> None:
-        """Bury the bones we carry, but only once the inventory has no room left."""
+        """Once the inventory has no room left, bury the bones and drop the cowhides."""
         if rules.is_full(self.bridge.inventory):
             self.bury()
+            self.drop_cowhides()
+
+    def drop_cowhides(self) -> None:
+        """Shift-click drop every cowhide, leaving everything else alone."""
+        slots = rules.cowhide_slots(self.bridge.inventory)
+        if slots:
+            self.drop_items(slots, verbose=False, rects=self.bridge.inventory_slots)
+            self.log_msg(f"Dropped {len(slots)} cowhides.")
 
     def bury(self) -> None:
         """Bury every bone in the inventory."""

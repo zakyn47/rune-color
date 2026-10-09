@@ -5,6 +5,7 @@ from typing import List, Optional
 from utilities.api.bridge_api import GroundItem, Npc, Target, Tile
 
 BONES = 526
+COWHIDE = 1739
 EMPTY = -1
 TARGET_NAME = "Cow"
 LOOT_NAMES = ("Bones",)
@@ -54,6 +55,11 @@ def bone_slots(inventory: Optional[List[int]]) -> List[int]:
         List[int]: The slot indices, lowest first.
     """
     return [slot for slot, item in enumerate(inventory or []) if item == BONES]
+
+
+def cowhide_slots(inventory: Optional[List[int]]) -> List[int]:
+    """Return the inventory slots holding Cowhides, lowest first."""
+    return [slot for slot, item in enumerate(inventory or []) if item == COWHIDE]
 
 
 def is_finished(target: Optional[Target]) -> bool:

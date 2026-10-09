@@ -62,6 +62,7 @@ class FakeFighter:
     take = OSRSCowFighter.take
     bury = OSRSCowFighter.bury
     bury_when_full = OSRSCowFighter.bury_when_full
+    drop_cowhides = OSRSCowFighter.drop_cowhides
     _wait_until = OSRSCowFighter._wait_until
     _slot_item = OSRSCowFighter._slot_item
     attack = OSRSCowFighter.attack
@@ -88,6 +89,7 @@ class FakeFighter:
         self.hover_words = []
         self.home = (3256, 3272, 0)
         self.walked_home = 0
+        self.dropped = []
         self.slept = 0
 
     def is_in_game_view(self, point):
@@ -98,6 +100,11 @@ class FakeFighter:
 
     def move_to_scene_object(self, obj):
         self.mouse.moves.append(obj)
+
+    def drop_items(self, slots, verbose=True, rects=None):
+        self.dropped.extend(slots)
+        for slot in slots:
+            self.bridge.inventory[slot] = -1
 
     def walk_home(self):
         self.walked_home += 1
@@ -275,6 +282,19 @@ class BuryWhenFullTest(unittest.TestCase):
         bot = FakeFighter(bridge, on_click=buried)
         bot.bury_when_full()
         self.assertEqual(bot.bones_buried, 27)
+
+    def test_drops_every_cowhide_once_the_inventory_is_full(self):
+        cowhide = rules.COWHIDE
+        bot = FakeFighter(
+            FakeBridge(inventory=[1351, cowhide, 526, cowhide] + [995] * 24)
+        )
+        bot.bury_when_full()
+        self.assertEqual(bot.dropped, [1, 3])
+
+    def test_keeps_cowhides_while_there_is_room(self):
+        bot = FakeFighter(FakeBridge(inventory=[rules.COWHIDE] + [-1] * 27))
+        bot.bury_when_full()
+        self.assertEqual(bot.dropped, [])
 
 
 class StartTest(unittest.TestCase):
