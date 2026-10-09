@@ -6,6 +6,7 @@ import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
 from utilities.api.bridge_api import GroundItem, Tile
 from utilities.geometry import Point
+from utilities.walker import Walker
 
 BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in to be heard from.
 ATTACK_TRIES = 3  # Cows to try before looking elsewhere.
@@ -15,6 +16,9 @@ KILL_TIMEOUT = 60
 LOOT_APPEAR_TIMEOUT = 3  # Drops appear a tick or two after the death.
 TAKE_TIMEOUT = 5  # Includes walking to the item.
 BURY_TIMEOUT = 3
+OPEN_TIMEOUT = 5  # Seconds for a clicked gate to swing open.
+WALK_TIMEOUT = 60  # A walk this long is stuck, most likely at the closed gate.
+HOME_SQUARE = 4  # Tiles; arriving anywhere in this square around home will do.
 MAX_TAKES = 5  # Bounds the loot loop if an item can never be taken.
 
 
@@ -24,13 +28,13 @@ class OSRSCowFighter(OSRSBot):
     def __init__(self) -> None:
         bot_title = "Cow Fighter"
         description = (
-            "Kill cyan-tagged cows, take the bones (and any coins) they drop, bury the"
-            " bones, and repeat. Hitpoints are not watched.\n\n"
+            "Kill cows, take the bones (and any coins) they drop, bury the bones, and"
+            " repeat. Stays near where it starts, walking back (and opening the field's"
+            " west gate) if it drifts away. Hitpoints are not watched.\n\n"
             "Setup:\n"
             "- Stand in the cow field east of the River Lum, north of Lumbridge castle.\n"
             "- Empty inventory; wield a weapon if you have one.\n"
-            "- The script's RuneLite profile tags cows cyan and shows their"
-            " bones and coins; the bot aims with the plug-in's live positions.\n"
+            "- The bot aims with the plug-in's live positions.\n"
             "- Requires the RuneColor Bridge plug-in (plugin/README.md).\n"
             "- Stretched Mode off, Resizable - Classic layout."
         )
@@ -39,6 +43,7 @@ class OSRSCowFighter(OSRSBot):
         self.take_breaks = False
         self.relog_time = rd.biased_trunc_norm_samp(18000, 21000)
         self.death_tile: Optional[Tile] = None
+        self.home: Optional[Tile] = None
         self.kills = 0
         self.bones_buried = 0
         self.coins_looted = 0
@@ -82,6 +87,9 @@ class OSRSCowFighter(OSRSBot):
             return
         self.log_msg(f"[START] ({self.run_time // 60}h {self.run_time % 60}m)")
         self.prepare_standard_initial_state()
+        self.home = self.home or self.bridge.world_point
+        if rules.far_from(self._here(), self.home):
+            self.walk_home()
         start_time = time.time()
         end_time = int(self.run_time) * 60
         while time.time() - start_time < end_time:
@@ -119,10 +127,13 @@ class OSRSCowFighter(OSRSBot):
             bool: True once the cow is our target.
         """
         for _ in range(ATTACK_TRIES):
-            candidates = rules.attack_candidates(self.bridge.npcs)
+            candidates = [
+                npc
+                for npc in rules.attack_candidates(self.bridge.npcs)
+                if self.is_in_game_view(Point(*npc.point))
+            ]
             if not candidates:
-                self.log_msg("No free cow in sight. Moving a little...")
-                self.walk_to_random_point_nearby(verbose=False)
+                self.stay_home()
                 return False
             if not self.aim_at(candidates[0].index):
                 continue
@@ -132,6 +143,49 @@ class OSRSCowFighter(OSRSBot):
             if self._wait_until(lambda: self.bridge.target is not None, ATTACK_TIMEOUT):
                 return True
         return False
+
+    def stay_home(self) -> None:
+        """With no free cow in view, go back if we drifted away, or wait for one.
+
+        Clicking somewhere at random to find cows walked the bot out of the field and,
+        once, into a fight with a Man in the farmhouse.
+        """
+        if rules.far_from(self._here(), self.home):
+            self.log_msg("Drifted away from the cows. Walking back...")
+            self.walk_home()
+            return
+        self.sleep(1, 2)
+
+    def walk_home(self) -> None:
+        """Walk back to the home tile, opening the field gate if it blocks the way."""
+        walker = Walker(self, dest_square_side_length=HOME_SQUARE)
+        home = Point(self.home[0], self.home[1])
+        if walker.walk_to(home, host="dax", timeout=WALK_TIMEOUT):
+            return
+        if self.open_gate():
+            walker.walk_to(home, host="dax", timeout=WALK_TIMEOUT)
+
+    def open_gate(self) -> bool:
+        """Open the field gate if it is closed within reach.
+
+        Returns:
+            bool: True once it swung open.
+        """
+        self.bridge.request_objects(rules.GATE_CLOSED)
+        try:
+            self._wait_until(self.visible_objects, self.game_tick * 3)
+            gates = [
+                g for g in self.visible_objects() if g.distance <= rules.GATE_REACH
+            ]
+            if not gates:
+                return False
+            self.move_to_scene_object(gates[0])
+            if not self.wait_for_hover_text("Open"):
+                return False
+            self.mouse.click()
+            return self._wait_until(lambda: not self.visible_objects(), OPEN_TIMEOUT)
+        finally:
+            self.bridge.clear_objects()
 
     def aim_at(self, index: int) -> bool:
         """Move the cursor onto an NPC, following it if it walks.
@@ -163,8 +217,9 @@ class OSRSCowFighter(OSRSBot):
                 last_tile = target.tile
             if rules.is_finished(target):
                 # Only a health bar seen at zero is a kill: a target that simply
-                # disappears walked off or was taken by someone else.
-                if target is not None:
+                # disappears walked off or was taken by someone else. And only a cow:
+                # anything else was clicked by mistake.
+                if target is not None and target.name == rules.TARGET_NAME:
                     self.kills += 1
                     self.death_tile = last_tile
                     self.log_msg(f"Killed a {target.name} ({self.kills} so far).")
@@ -197,9 +252,10 @@ class OSRSCowFighter(OSRSBot):
             bool: True once it reached the inventory.
         """
         before = self.bridge.inventory
-        self.mouse.move_to(Point(*item.point))
-        if not self.wait_for_hover_text("Take"):
-            self.log_msg(f"Aimed at the {item.name}, but the cursor doesn't read Take.")
+        if not self._aim_at_item(item):
+            menu = self.bridge.menu
+            seen = menu.top_text if menu is not None else "nothing"
+            self.log_msg(f"Aimed at the {item.name}, but the cursor reads {seen!r}.")
             return False
         self.mouse.click()
         if not self._wait_until(lambda: self.bridge.inventory != before, TAKE_TIMEOUT):
@@ -207,6 +263,28 @@ class OSRSCowFighter(OSRSBot):
         if item.id == rules.COINS:
             self.coins_looted += item.quantity
         return True
+
+    def _aim_at_item(self, item: GroundItem) -> bool:
+        """Point at an item until the hover text reads Take, aiming twice at most.
+
+        The item's screen point comes from a snapshot, and the camera follows us, so
+        if we were still moving the item has since slid across the screen.
+        """
+        for _ in range(AIM_PASSES):
+            self.mouse.move_to(Point(*item.point))
+            if self.wait_for_hover_text("Take"):
+                return True
+            item = next(
+                (
+                    i
+                    for i in self.bridge.ground_items
+                    if i.id == item.id and i.tile == item.tile
+                ),
+                None,
+            )
+            if item is None:
+                return False
+        return False
 
     def bury(self) -> None:
         """Bury every bone in the inventory."""
@@ -218,6 +296,10 @@ class OSRSCowFighter(OSRSBot):
                 lambda: self._slot_item(slot) != rules.BONES, BURY_TIMEOUT
             ):
                 self.bones_buried += 1
+
+    def _here(self) -> Optional[Tile]:
+        here = self.bridge.world_point
+        return None if here[0] < 0 else here
 
     def _slot_item(self, slot: int) -> int:
         inventory = self.bridge.inventory

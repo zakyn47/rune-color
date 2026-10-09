@@ -8,6 +8,11 @@ BONES = 526
 COINS = 995
 TARGET_NAME = "Cow"
 LOOT_NAMES = ("Bones", "Coins")
+# The cow field's west gate, both halves while closed. Open, they change ID.
+GATE_CLOSED = frozenset({1558, 1560})
+GATE_REACH = 3  # Tiles; a gate further away is not the one blocking our walk.
+# Cows wander the whole field; further than this from home, we have left it.
+LEASH = 8
 # Drops land on the tile the cow died on; a little slack covers one that died
 # mid-step, and anything further out is likelier to be someone else's.
 LOOT_RADIUS = 2
@@ -69,6 +74,25 @@ def attack_candidates(npcs: List[Npc], name: str = TARGET_NAME) -> List[Npc]:
         List[Npc]: The free ones, in the order given.
     """
     return [npc for npc in npcs if npc.name == name and not npc.busy]
+
+
+def far_from(here: Optional[Tile], home: Tile, leash: int = LEASH) -> bool:
+    """Whether we are further than the leash from home, or on another plane.
+
+    Args:
+        here (Optional[Tile]): Our tile, or None if unknown.
+        home (Tile): The tile to stay near.
+        leash (int, optional): Tiles we may stray. Defaults to `LEASH`.
+
+    Returns:
+        bool: True if we should walk home. An unknown position never is, so a
+            stale feed does not send us walking on a guess.
+    """
+    if here is None:
+        return False
+    return here[2] != home[2] or (
+        max(abs(here[0] - home[0]), abs(here[1] - home[1])) > leash
+    )
 
 
 def find_npc(npcs: List[Npc], index: int) -> Optional[Npc]:

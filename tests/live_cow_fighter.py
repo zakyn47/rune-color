@@ -23,7 +23,6 @@ from model.bot import BotStatus  # noqa: E402
 from model.osrs.cow_fighter import OSRSCowFighter  # noqa: E402
 from utilities import runelite_profiles  # noqa: E402
 from utilities.geometry import Point  # noqa: E402
-from utilities.walker import Walker  # noqa: E402
 
 # Open ground among the the cow field north-east of Lumbridge castle.
 COWS = Point(3256, 3272)
@@ -65,8 +64,8 @@ def main() -> None:
         if not bot._Bot__initialize_window():
             raise RuntimeError("could not orient in the client after logging in")
     if args.walk:
-        print(f">>> walking to the cows at {COWS}", flush=True)
-        Walker(bot, dest_square_side_length=4).walk_to(COWS, host="dax")
+        # The bot walks there itself, opening the field gate if it is closed.
+        bot.home = (COWS.x, COWS.y, 0)
     bot.set_status(BotStatus.STOPPED)
 
     coins_before = coins_in(bot.bridge.inventory)

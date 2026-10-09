@@ -98,6 +98,28 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         """Stop preferring plug-in values, reverting every read to OCR."""
         self.bridge = None
 
+    def is_in_game_view(self, point: Point) -> bool:
+        """Whether a screen point lies in the game view, where a click reaches the world.
+
+        The plug-in reports objects and NPCs even when the camera has them past the
+        edge of the canvas, and a click there would land on another window.
+
+        Args:
+            point (Point): A screen point.
+
+        Returns:
+            bool: True if it is inside the game view.
+        """
+        view = self.win.game_view
+        return (
+            view.left <= point.x < view.left + view.width
+            and view.top <= point.y < view.top + view.height
+        )
+
+    def visible_objects(self) -> List[SceneObject]:
+        """Return the requested objects whose outline is in the game view."""
+        return [o for o in self.bridge.objects if self.is_in_game_view(o.hull.center)]
+
     def move_to_scene_object(self, obj: SceneObject) -> None:
         """Move the mouse to a random point on a scene object the bridge reported.
 

@@ -174,7 +174,7 @@ class OSRSPowerMiner(OSRSBot):
         return True
 
     def _pick_rock(self) -> Optional[SceneObject]:
-        rocks = self.bridge.objects
+        rocks = self.visible_objects()
         if not rocks:
             return None
         if len(rocks) > 1 and random.random() < SECOND_ROCK_CHANCE:

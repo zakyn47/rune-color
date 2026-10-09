@@ -1,6 +1,6 @@
 import math
 import time
-from typing import TYPE_CHECKING, List, Literal, Tuple, Union
+from typing import TYPE_CHECKING, List, Literal, Optional, Tuple, Union
 
 if TYPE_CHECKING:
     from model import RuneLiteBot
@@ -188,7 +188,9 @@ class Walker:
         within_y_range = p1.y <= self.y <= p2.y
         return within_x_range and within_y_range
 
-    def walk(self, walk_path: WalkPath, dest: Point = None) -> bool:
+    def walk(
+        self, walk_path: WalkPath, dest: Point = None, timeout: Optional[float] = None
+    ) -> bool:
         """Walk along a `WalkPath` to a destination area.
 
         Note that each `Point` defining the `walk_path` and also `dest` are measured in
@@ -200,10 +202,14 @@ class Walker:
             dest (Point, optional): The destination `Point` to define an arrival area
                 around. Defaults to None, meaning the `walk_path` is simply walked until
                 the last `Point` is reached.
+            timeout (float, optional): Seconds to give up after. Defaults to None,
+                walking until arrival. A closed door or gate on the path otherwise
+                keeps us clicking at it forever.
 
         Returns:
             bool: True if the specified destination was reached, False otherwise.
         """
+        deadline = None if timeout is None else time.time() + timeout
         walk_path = (
             walk_path
             if isinstance(walk_path[-1], Point)
@@ -215,6 +221,9 @@ class Walker:
             embarking = True
             self.bot.log_msg("Embarking...")
             while not self.has_arrived(dest):
+                if deadline is not None and time.time() > deadline:
+                    self.bot.log_msg("Gave up walking: the way seems blocked.")
+                    return False
                 new_pos = self.get_target_posn(walk_path)
                 if self.reset_zoom_each_embark and embarking:
                     minimap_center = self.bot.win.minimap.center
@@ -236,7 +245,10 @@ class Walker:
             return False
 
     def walk_to(
-        self, dest: Union[NamedDest, Point], host: Literal["dax", "osrspf"] = "dax"
+        self,
+        dest: Union[NamedDest, Point],
+        host: Literal["dax", "osrspf"] = "dax",
+        timeout: Optional[float] = None,
     ) -> bool:
         """Use an API-generated `WalkPath` to travel to a destination.
 
@@ -254,6 +266,7 @@ class Walker:
                 `utilities.locations`.
             host ("dax" or "osrspf"): Whether to use the DAX or OSRSpathfinder
                 pathfinding API. Defaults to the more reliable "dax".
+            timeout (float, optional): Seconds to give up after, as for `walk`.
 
         Returns:
             bool: True if the specified destination was reached, False otherwise.
@@ -266,7 +279,7 @@ class Walker:
         )
         dest = Point(dest[0], dest[1])
         path = self.get_api_walk_path(p1=self.loc, p2=dest, host=host)
-        return self.walk(path, dest)
+        return self.walk(path, dest, timeout)
 
     def get_api_walk_path(
         self, p1: Point, p2: Point, host: Literal["dax", "osrspf"]

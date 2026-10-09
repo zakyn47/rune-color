@@ -87,6 +87,10 @@ class FakeMiner:
     _ore_count = OSRSPowerMiner._ore_count
     _wait_until = OSRSPowerMiner._wait_until
     _pick_rock = OSRSPowerMiner._pick_rock
+
+    def visible_objects(self):
+        return self.bridge.objects
+
     ore_label = OSRSPowerMiner.ore_label
     game_tick = 0.003
 

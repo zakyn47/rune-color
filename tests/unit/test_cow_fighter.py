@@ -12,6 +12,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from model.osrs.cow_fighter import OSRSCowFighter  # noqa: E402
+import model.osrs.cow_fighter_rules as rules  # noqa: E402
 from utilities.api.bridge_api import GroundItem, Npc, Target  # noqa: E402
 
 EMPTY = [-1] * 28
@@ -25,6 +26,16 @@ class FakeBridge:
         self.npcs = list(npcs)
         self.inventory_slots = None
         self.game_state = "LOGGED_IN"
+        self.world_point = (3256, 3272, 0)
+        self.menu = None
+        self.objects = []
+        self.requested = None
+
+    def request_objects(self, ids):
+        self.requested = set(ids)
+
+    def clear_objects(self):
+        self.requested = None
 
     @property
     def target(self):
@@ -55,6 +66,10 @@ class FakeFighter:
     attack = OSRSCowFighter.attack
     aim_at = OSRSCowFighter.aim_at
     bridge_is_heard = OSRSCowFighter.bridge_is_heard
+    stay_home = OSRSCowFighter.stay_home
+    open_gate = OSRSCowFighter.open_gate
+    _aim_at_item = OSRSCowFighter._aim_at_item
+    _here = OSRSCowFighter._here
     game_tick = 0.003
 
     def __init__(self, bridge, on_click=lambda: None, says_take=True):
@@ -69,6 +84,24 @@ class FakeFighter:
         self.coins_looted = 0
         self.messages = []
         self.hover_words = []
+        self.home = (3256, 3272, 0)
+        self.walked_home = 0
+        self.slept = 0
+
+    def is_in_game_view(self, point):
+        return True
+
+    def visible_objects(self):
+        return self.bridge.objects
+
+    def move_to_scene_object(self, obj):
+        self.mouse.moves.append(obj)
+
+    def walk_home(self):
+        self.walked_home += 1
+
+    def sleep(self, lo=None, hi=None):
+        self.slept += 1
 
     def wait_for_hover_text(self, contains, timeout=1.5):
         self.hover_words.append(contains)
@@ -95,6 +128,13 @@ class WaitForKillTest(unittest.TestCase):
         self.assertEqual(bot.kills, 1)
         self.assertEqual(bot.death_tile, (11, 10, 0))
 
+    def test_a_kill_that_is_not_a_cow_is_not_counted(self):
+        bridge = FakeBridge(targets=[Target("Man", 0, 30, (10, 10, 0)), None])
+        bot = FakeFighter(bridge)
+        bot.wait_for_kill(timeout=1)
+        self.assertEqual(bot.kills, 0)
+        self.assertIsNone(bot.death_tile)
+
     def test_a_fight_that_ends_without_a_kill_counts_nothing(self):
         bridge = FakeBridge(targets=[Target("Cow", 20, 30, (10, 10, 0)), None])
         bot = FakeFighter(bridge)
@@ -120,6 +160,25 @@ class LootTest(unittest.TestCase):
         self.assertIsNone(bot.death_tile)
         self.assertEqual(bot.hover_words, ["Take"])
 
+    def test_aims_again_where_the_item_now_is_before_giving_up(self):
+        bridge = FakeBridge(ground_items=[self.coins()])
+        bot = FakeFighter(bridge, says_take=False)
+        answers = iter([False, True])
+        bot.wait_for_hover_text = lambda contains, timeout=1.5: next(answers)
+
+        def moved_on_screen():
+            bridge.ground_items = []
+            bridge.inventory = [995] + [-1] * 27
+
+        bot.mouse.on_click = moved_on_screen
+        bridge.ground_items = [
+            GroundItem(995, "Coins", 25, (10, 10, 0), (310, 210)),
+        ]
+        bot.death_tile = (10, 10, 0)
+        bot.loot()
+        self.assertEqual(bot.mouse.moves, [(310, 210), (310, 210)])
+        self.assertEqual(bot.coins_looted, 25)
+
     def test_does_not_click_when_the_cursor_does_not_read_take(self):
         bot = FakeFighter(FakeBridge(ground_items=[self.coins()]), says_take=False)
         bot.death_tile = (10, 10, 0)
@@ -144,10 +203,24 @@ class AttackTest(unittest.TestCase):
         self.assertEqual(bot.mouse.clicks, 1)
         self.assertEqual(bot.hover_words, ["Attack"])
 
-    def test_moves_on_when_no_cow_is_free(self):
+    def test_waits_for_a_free_cow_instead_of_wandering(self):
         bot = FakeFighter(FakeBridge(npcs=[self.cow(1, (5, 5), busy=True)]))
         self.assertIs(bot.attack(), False)
-        self.assertTrue(bot.walked)
+        self.assertFalse(hasattr(bot, "walked"))
+        self.assertEqual(bot.walked_home, 0)
+        self.assertEqual(bot.mouse.clicks, 0)
+
+    def test_walks_home_when_it_has_drifted_away(self):
+        bridge = FakeBridge()
+        bridge.world_point = (3240, 3250, 0)
+        bot = FakeFighter(bridge)
+        self.assertIs(bot.attack(), False)
+        self.assertEqual(bot.walked_home, 1)
+
+    def test_ignores_a_cow_outside_the_game_view(self):
+        bot = FakeFighter(FakeBridge(npcs=[self.cow(2, (9, 9))]))
+        bot.is_in_game_view = lambda point: False
+        self.assertIs(bot.attack(), False)
         self.assertEqual(bot.mouse.clicks, 0)
 
 
@@ -186,6 +259,51 @@ class StartTest(unittest.TestCase):
         bridge = FakeBridge()
         bridge.game_state = ""
         self.assertFalse(FakeFighter(bridge).bridge_is_heard())
+
+
+class GateTest(unittest.TestCase):
+    def gate(self, distance):
+        return SimpleNamespace(id=1558, distance=distance)
+
+    def test_opens_a_closed_gate_next_to_us(self):
+        bridge = FakeBridge()
+        bridge.objects = [self.gate(1)]
+
+        def opened():
+            bridge.objects = []
+
+        bot = FakeFighter(bridge, on_click=opened)
+        bot.wait_for_hover_text = lambda contains, timeout=1.5: contains == "Open"
+        self.assertIs(bot.open_gate(), True)
+        self.assertEqual(bridge.requested, None)
+        self.assertEqual(bot.mouse.clicks, 1)
+
+    def test_leaves_a_gate_that_does_not_read_open(self):
+        bridge = FakeBridge()
+        bridge.objects = [self.gate(1)]
+        bot = FakeFighter(bridge)
+        bot.wait_for_hover_text = lambda contains, timeout=1.5: False
+        self.assertIs(bot.open_gate(), False)
+        self.assertEqual(bot.mouse.clicks, 0)
+
+    def test_no_gate_in_reach_means_nothing_to_open(self):
+        bridge = FakeBridge()
+        bridge.objects = [self.gate(rules.GATE_REACH + 1)]
+        bot = FakeFighter(bridge)
+        self.assertIs(bot.open_gate(), False)
+        self.assertEqual(bot.mouse.clicks, 0)
+
+
+class RulesTest(unittest.TestCase):
+    def test_home_is_left_beyond_the_leash(self):
+        home = (3256, 3272, 0)
+        self.assertFalse(rules.far_from((3256 + rules.LEASH, 3272, 0), home))
+        self.assertTrue(rules.far_from((3256 + rules.LEASH + 1, 3272, 0), home))
+        self.assertTrue(rules.far_from((3256, 3272, 1), home))
+        self.assertFalse(rules.far_from(None, home))
+
+    def test_the_field_gate_ids_are_the_closed_halves(self):
+        self.assertEqual(rules.GATE_CLOSED, frozenset({1558, 1560}))
 
 
 if __name__ == "__main__":

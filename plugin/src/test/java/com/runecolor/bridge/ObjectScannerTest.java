@@ -12,6 +12,7 @@ import net.runelite.api.GameObject;
 import net.runelite.api.Player;
 import net.runelite.api.Scene;
 import net.runelite.api.Tile;
+import net.runelite.api.WallObject;
 import net.runelite.api.coords.LocalPoint;
 import net.runelite.api.coords.WorldPoint;
 import org.junit.Test;
@@ -68,6 +69,21 @@ public class ObjectScannerTest {
         GameObject[] all = Arrays.copyOf(objects, objects.length + 1);
         all[objects.length] = object;
         return all;
+    }
+
+    @Test
+    public void reportsARequestedWallObjectLikeAGate() {
+        WallObject gate = Mockito.mock(WallObject.class);
+        Mockito.when(gate.getId()).thenReturn(1558);
+        Mockito.when(gate.getWorldLocation()).thenReturn(new WorldPoint(3202, 3200, 0));
+        Mockito.when(gate.getClickbox()).thenReturn(new Rectangle(290, 180, 20, 40));
+        Tile tile = Mockito.mock(Tile.class);
+        Mockito.when(tile.getWallObject()).thenReturn(gate);
+        tiles[0][52][50] = tile;
+        List<Snapshot.SceneObject> found = scan(new HashSet<>(Arrays.asList(1558)));
+        assertEquals(1, found.size());
+        assertEquals(1558, found.get(0).id);
+        assertEquals(2, found.get(0).distance);
     }
 
     private List<Snapshot.SceneObject> scan(Set<Integer> ids) {
