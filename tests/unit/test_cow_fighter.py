@@ -115,6 +115,7 @@ class FakeFighter:
         self.home = (3256, 3272, 0)
         self.walked_home = 0
         self.dropped = []
+        self.last_combat = None
         self.slept = 0
 
     def is_in_game_view(self, point):
@@ -451,6 +452,19 @@ class GateTest(unittest.TestCase):
         bot = FakeFighter(bridge)
         self.assertIs(bot.open_gate(), False)
         self.assertEqual(bot.mouse.clicks, 0)
+
+
+class CombatCooldownTest(unittest.TestCase):
+    def test_waits_out_the_logout_delay_after_combat(self):
+        self.assertAlmostEqual(rules.combat_cooldown_left(100.0, 104.0), 7.0)
+        self.assertEqual(rules.combat_cooldown_left(100.0, 112.0), 0)
+        self.assertEqual(rules.combat_cooldown_left(None, 112.0), 0)
+
+    def test_a_fight_marks_the_time_of_combat(self):
+        bridge = FakeBridge(targets=[Target("Cow", 20, 30, (10, 10, 0)), None])
+        bot = FakeFighter(bridge)
+        bot.wait_for_kill(timeout=1)
+        self.assertIsNotNone(bot.last_combat)
 
 
 class RulesTest(unittest.TestCase):

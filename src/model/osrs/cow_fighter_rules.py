@@ -12,6 +12,8 @@ LOOT_NAMES = ("Bones",)
 # The cow field's west gate, both halves while closed. Open, they change ID.
 GATE_CLOSED = frozenset({1558, 1560})
 GATE_REACH = 3  # Tiles; a gate further away is not the one blocking our walk.
+# The game will not let us log out until this long after the last combat.
+LOGOUT_COMBAT_DELAY = 11  # Seconds: 10, plus a tick of slack.
 # Cows wander the whole field; further than this from home, we have left it.
 LEASH = 8
 # Drops land on the tile the cow died on; a little slack covers one that died
@@ -60,6 +62,13 @@ def bone_slots(inventory: Optional[List[int]]) -> List[int]:
 def cowhide_slots(inventory: Optional[List[int]]) -> List[int]:
     """Return the inventory slots holding Cowhides, lowest first."""
     return [slot for slot, item in enumerate(inventory or []) if item == COWHIDE]
+
+
+def combat_cooldown_left(last_combat: Optional[float], now: float) -> float:
+    """Return the seconds to wait before the game will let us log out."""
+    if last_combat is None:
+        return 0
+    return max(0, LOGOUT_COMBAT_DELAY - (now - last_combat))
 
 
 def is_finished(target: Optional[Target]) -> bool:

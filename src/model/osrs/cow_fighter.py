@@ -48,6 +48,7 @@ class OSRSCowFighter(OSRSBot):
         self.relog_time = rd.biased_trunc_norm_samp(18000, 21000)
         self.death_tile: Optional[Tile] = None
         self.home: Optional[Tile] = None
+        self.last_combat: Optional[float] = None
         self.kills = 0
         self.bones_buried = 0
         self.bones_taken = 0
@@ -109,6 +110,7 @@ class OSRSCowFighter(OSRSBot):
             f"Killed {self.kills} cows, took {self.bones_taken} bones and buried"
             f" {self.bones_buried}."
         )
+        time.sleep(rules.combat_cooldown_left(self.last_combat, time.time()))
         self.logout_and_stop_script("[END]")
 
     def bridge_is_heard(self) -> bool:
@@ -228,6 +230,8 @@ class OSRSCowFighter(OSRSBot):
         end_time = time.time() + timeout
         while time.time() < end_time:
             target = self.bridge.target
+            if target is not None:
+                self.last_combat = time.time()
             if target is not None and target.tile is not None:
                 last_tile = target.tile
             if rules.is_finished(target):
