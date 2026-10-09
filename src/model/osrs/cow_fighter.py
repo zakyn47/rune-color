@@ -101,7 +101,7 @@ class OSRSCowFighter(OSRSBot):
                 self.potentially_take_a_break()
             self.loot()
             self.bury_when_full()
-            self.rest_if_hurt()
+            self.rest_if_hurt(start_time + end_time - time.time())
             self.fight()
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
@@ -306,7 +306,10 @@ class OSRSCowFighter(OSRSBot):
             return False
         self.mouse.move_to(entry.rect.random_point())
         self.mouse.click()
-        return entry.option == "Take"
+        if entry.option != "Take":
+            return False
+        self.log_msg(f"Took the {item.name} from the menu; something else lay on top.")
+        return True
 
     def _aim_at_item(self, item: GroundItem) -> bool:
         """Point at an item until the hover text reads Take, aiming twice at most.
@@ -330,13 +333,15 @@ class OSRSCowFighter(OSRSBot):
                 return False
         return False
 
-    def rest_if_hurt(self) -> None:
+    def rest_if_hurt(self, time_left: float = REST_TIMEOUT) -> None:
         """Stop fighting while hitpoints are low, until they regenerate."""
         hitpoints = self.bridge.hitpoints
         if not rules.needs_rest(hitpoints):
             return
         self.log_msg(f"Hitpoints {hitpoints[0]}/{hitpoints[1]}. Resting...")
-        self._wait_until(lambda: rules.rested(self.bridge.hitpoints), REST_TIMEOUT)
+        self._wait_until(
+            lambda: rules.rested(self.bridge.hitpoints), min(REST_TIMEOUT, time_left)
+        )
 
     def bury_when_full(self) -> None:
         """Once the inventory has no room left, bury the bones and drop the cowhides."""
