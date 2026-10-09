@@ -4,7 +4,7 @@ from typing import Callable, Optional
 import model.osrs.cow_fighter_rules as rules
 import utilities.random_util as rd
 from model.osrs.osrs_bot import OSRSBot
-from utilities.api.bridge_api import GroundItem, Tile
+from utilities.api.bridge_api import GroundItem, SceneObject, Tile
 from utilities.geometry import Point
 from utilities.walker import Walker
 
@@ -17,6 +17,7 @@ LOOT_APPEAR_TIMEOUT = 3  # Drops appear a tick or two after the death.
 TAKE_TIMEOUT = 5  # Includes walking to the item.
 BURY_TIMEOUT = 3
 OPEN_TIMEOUT = 5  # Seconds for a clicked gate to swing open.
+GATE_AIM_TRIES = 4
 WALK_TIMEOUT = 60  # A walk this long is stuck, most likely at the closed gate.
 HOME_SQUARE = 4  # Tiles; arriving anywhere in this square around home will do.
 MAX_TAKES = 5  # Bounds the loot loop if an item can never be taken.
@@ -179,13 +180,24 @@ class OSRSCowFighter(OSRSBot):
             ]
             if not gates:
                 return False
-            self.move_to_scene_object(gates[0])
-            if not self.wait_for_hover_text("Open"):
+            if not self._aim_at_gate(gates[0]):
                 return False
             self.mouse.click()
             return self._wait_until(lambda: not self.visible_objects(), OPEN_TIMEOUT)
         finally:
             self.bridge.clear_objects()
+
+    def _aim_at_gate(self, gate: SceneObject) -> bool:
+        """Point at the gate until the hover text reads Open.
+
+        Its outline is the convex hull of thin planks, so a random point inside it
+        can land on the gap between them; another point usually hits.
+        """
+        for _ in range(GATE_AIM_TRIES):
+            self.move_to_scene_object(gate)
+            if self.wait_for_hover_text("Open"):
+                return True
+        return False
 
     def aim_at(self, index: int) -> bool:
         """Move the cursor onto an NPC, following it if it walks.

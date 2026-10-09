@@ -70,6 +70,7 @@ class FakeFighter:
     stay_home = OSRSCowFighter.stay_home
     open_gate = OSRSCowFighter.open_gate
     _aim_at_item = OSRSCowFighter._aim_at_item
+    _aim_at_gate = OSRSCowFighter._aim_at_gate
     _here = OSRSCowFighter._here
     game_tick = 0.003
 
@@ -302,6 +303,20 @@ class GateTest(unittest.TestCase):
         bot.wait_for_hover_text = lambda contains, timeout=1.5: contains == "Open"
         self.assertIs(bot.open_gate(), True)
         self.assertEqual(bridge.requested, None)
+        self.assertEqual(bot.mouse.clicks, 1)
+
+    def test_tries_another_point_on_the_gate_before_giving_up(self):
+        bridge = FakeBridge()
+        bridge.objects = [self.gate(1)]
+
+        def opened():
+            bridge.objects = []
+
+        bot = FakeFighter(bridge, on_click=opened)
+        answers = iter([False, True])
+        bot.wait_for_hover_text = lambda contains, timeout=1.5: next(answers)
+        self.assertIs(bot.open_gate(), True)
+        self.assertEqual(len(bot.mouse.moves), 2)
         self.assertEqual(bot.mouse.clicks, 1)
 
     def test_leaves_a_gate_that_does_not_read_open(self):
