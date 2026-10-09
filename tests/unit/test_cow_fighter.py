@@ -21,8 +21,10 @@ class FakeBridge:
     def __init__(self, targets=(None,), ground_items=(), inventory=EMPTY, npcs=()):
         self._targets = list(targets)
         self.ground_items = list(ground_items)
-        self.inventory = list(inventory)
+        self.inventory = None if inventory is None else list(inventory)
         self.npcs = list(npcs)
+        self.inventory_slots = None
+        self.game_state = "LOGGED_IN"
 
     @property
     def target(self):
@@ -52,6 +54,7 @@ class FakeFighter:
     _slot_item = OSRSCowFighter._slot_item
     attack = OSRSCowFighter.attack
     aim_at = OSRSCowFighter.aim_at
+    bridge_is_heard = OSRSCowFighter.bridge_is_heard
     game_tick = 0.003
 
     def __init__(self, bridge, on_click=lambda: None, says_take=True):
@@ -65,8 +68,10 @@ class FakeFighter:
         self.bones_buried = 0
         self.coins_looted = 0
         self.messages = []
+        self.hover_words = []
 
-    def get_mouseover_text(self, contains=None, colors=None):
+    def wait_for_hover_text(self, contains, timeout=1.5):
+        self.hover_words.append(contains)
         return self.says_take
 
     def walk_to_random_point_nearby(self, verbose=True):
@@ -113,6 +118,7 @@ class LootTest(unittest.TestCase):
         bot.loot()
         self.assertEqual(bot.coins_looted, 25)
         self.assertIsNone(bot.death_tile)
+        self.assertEqual(bot.hover_words, ["Take"])
 
     def test_does_not_click_when_the_cursor_does_not_read_take(self):
         bot = FakeFighter(FakeBridge(ground_items=[self.coins()]), says_take=False)
@@ -136,6 +142,7 @@ class AttackTest(unittest.TestCase):
         self.assertIs(bot.attack(), True)
         self.assertEqual(bot.mouse.moves, [(9, 9), (9, 9)])
         self.assertEqual(bot.mouse.clicks, 1)
+        self.assertEqual(bot.hover_words, ["Attack"])
 
     def test_moves_on_when_no_cow_is_free(self):
         bot = FakeFighter(FakeBridge(npcs=[self.cow(1, (5, 5), busy=True)]))
@@ -155,6 +162,30 @@ class BuryTest(unittest.TestCase):
         bot.bury()
         self.assertEqual(bot.bones_buried, 2)
         self.assertEqual(bot.mouse.clicks, 2)
+
+    def test_clicks_the_slots_the_bridge_reports(self):
+        bridge = FakeBridge(inventory=[-1, 526] + [-1] * 26)
+        bridge.inventory_slots = [
+            SimpleNamespace(random_point=lambda i=i: ("bridge", i)) for i in range(28)
+        ]
+
+        def buried():
+            bridge.inventory[1] = -1
+
+        bot = FakeFighter(bridge, on_click=buried)
+        bot.bury()
+        self.assertEqual(bot.mouse.moves, [("bridge", 1)])
+
+
+class StartTest(unittest.TestCase):
+    def test_an_empty_inventory_does_not_block_the_start(self):
+        bot = FakeFighter(FakeBridge(inventory=None))
+        self.assertTrue(bot.bridge_is_heard())
+
+    def test_a_silent_bridge_blocks_the_start(self):
+        bridge = FakeBridge()
+        bridge.game_state = ""
+        self.assertFalse(FakeFighter(bridge).bridge_is_heard())
 
 
 if __name__ == "__main__":

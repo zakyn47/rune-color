@@ -7,7 +7,7 @@ from model.osrs.osrs_bot import OSRSBot
 from utilities.api.bridge_api import GroundItem, Tile
 from utilities.geometry import Point
 
-BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in's first inventory.
+BRIDGE_TIMEOUT = 5  # Seconds to wait for the plug-in to be heard from.
 ATTACK_TRIES = 3  # Cows to try before looking elsewhere.
 AIM_PASSES = 2  # Aim, then correct for where the cow walked meanwhile.
 ATTACK_TIMEOUT = 5  # Seconds for a clicked cow to become our target.
@@ -72,10 +72,8 @@ class OSRSCowFighter(OSRSBot):
 
     def main_loop(self) -> None:
         """Fight, loot and bury until the run time is up."""
-        if not self._wait_until(
-            lambda: self.bridge is not None and self.bridge.inventory is not None,
-            BRIDGE_TIMEOUT,
-        ):
+        # Not the inventory: the game never sends an empty one.
+        if not self._wait_until(self.bridge_is_heard, BRIDGE_TIMEOUT):
             self.log_msg(
                 "The Cow Fighter needs the RuneColor Bridge plug-in. Turn it on"
                 " in RuneLite and try again."
@@ -101,6 +99,9 @@ class OSRSCowFighter(OSRSBot):
         )
         self.logout_and_stop_script("[END]")
 
+    def bridge_is_heard(self) -> bool:
+        return self.bridge is not None and bool(self.bridge.game_state)
+
     def fight(self) -> None:
         """Attack a cow unless one is already our target, then see it die."""
         if self.bridge.target is None and not self.attack():
@@ -112,7 +113,7 @@ class OSRSCowFighter(OSRSBot):
 
         Cows wander, so a colour scan of the screen is out of date by the time the
         cursor arrives. The plug-in reports where each one is every tick, and the
-        cursor follows the chosen cow by its index until the mouseover confirms.
+        cursor follows the chosen cow by its index until the hover text confirms.
 
         Returns:
             bool: True once the cow is our target.
@@ -125,7 +126,7 @@ class OSRSCowFighter(OSRSBot):
                 return False
             if not self.aim_at(candidates[0].index):
                 continue
-            if not self.get_mouseover_text(contains="Attack"):
+            if not self.wait_for_hover_text("Attack"):
                 continue
             self.mouse.click()
             if self._wait_until(lambda: self.bridge.target is not None, ATTACK_TIMEOUT):
@@ -197,7 +198,7 @@ class OSRSCowFighter(OSRSBot):
         """
         before = self.bridge.inventory
         self.mouse.move_to(Point(*item.point))
-        if not self.get_mouseover_text(contains="Take"):
+        if not self.wait_for_hover_text("Take"):
             self.log_msg(f"Aimed at the {item.name}, but the cursor doesn't read Take.")
             return False
         self.mouse.click()
@@ -209,8 +210,9 @@ class OSRSCowFighter(OSRSBot):
 
     def bury(self) -> None:
         """Bury every bone in the inventory."""
+        rects = self.bridge.inventory_slots or self.win.inventory_slots
         for slot in rules.bone_slots(self.bridge.inventory):
-            self.mouse.move_to(self.win.inventory_slots[slot].random_point())
+            self.mouse.move_to(rects[slot].random_point())
             self.mouse.click()
             if self._wait_until(
                 lambda: self._slot_item(slot) != rules.BONES, BURY_TIMEOUT
