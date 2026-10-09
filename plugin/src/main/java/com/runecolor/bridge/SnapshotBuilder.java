@@ -4,6 +4,7 @@ import java.awt.Canvas;
 import java.awt.IllegalComponentStateException;
 import java.awt.Rectangle;
 import java.awt.Shape;
+import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
 import net.runelite.api.Actor;
 import net.runelite.api.GameObject;
@@ -23,8 +24,11 @@ import net.runelite.api.coords.WorldPoint;
 import net.runelite.api.gameval.InventoryID;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Turns the live client into an immutable {@link Snapshot}.
@@ -32,8 +36,9 @@ import java.util.List;
  * <p>This class performs no I/O and starts no threads, so it must be called on the
  * client thread, where the {@code Client} API is safe to touch.
  */
+@Slf4j
 public final class SnapshotBuilder {
-    public static final int SCHEMA_VERSION = 1;
+    public static final int SCHEMA_VERSION = 2;
 
     /** What {@code Actor#getAnimation()} returns when nothing is playing. */
     static final int NO_ANIMATION = -1;
@@ -64,6 +69,11 @@ public final class SnapshotBuilder {
     }
 
     public static Snapshot build(Client client, long nowMillis, String profile) {
+        return build(client, nowMillis, profile, Collections.emptySet());
+    }
+
+    public static Snapshot build(Client client, long nowMillis, String profile,
+                                  Set<Integer> objectIds) {
         String gameState = client.getGameState() == null
                 ? "UNKNOWN"
                 : client.getGameState().toString();
@@ -72,7 +82,7 @@ public final class SnapshotBuilder {
         if (player == null) {
             return new Snapshot(SCHEMA_VERSION, client.getTickCount(), nowMillis,
                     gameState, null, null, null, null, null, null, null, profile,
-                    null, null, inventory(client), null);
+                    null, null, inventory(client), null, null, null, null);
         }
 
         WorldPoint tile = player.getWorldLocation();
@@ -97,7 +107,21 @@ public final class SnapshotBuilder {
                 target(player),
                 groundItems(client, player),
                 inventory(client),
-                npcs(client, player));
+                npcs(client, player),
+                orNull("objects", () -> ObjectScanner.scan(client, player, objectIds)),
+                orNull("inventorySlots", () -> InventorySlots.read(client)),
+                orNull("menu", () -> MenuReader.read(client)));
+    }
+
+    /** A new field that fails to build must not cost the bot the rest of the snapshot. */
+    private static <T> T orNull(String field, Supplier<T> read) {
+        try {
+            return read.get();
+        } catch (RuntimeException e) {
+            // Debug, not warn: a field that keeps failing would otherwise log every tick.
+            log.debug("Left {} out of a snapshot: {}", field, e.toString());
+            return null;
+        }
     }
 
     /**
@@ -253,7 +277,7 @@ public final class SnapshotBuilder {
         return nearestFirst(nearby, MAX_NPCS);
     }
 
-    private static <T> List<T> nearestFirst(List<Nearby<T>> nearby, int max) {
+    static <T> List<T> nearestFirst(List<Nearby<T>> nearby, int max) {
         nearby.sort(Comparator.comparingInt(n -> n.distance));
         List<T> nearest = new ArrayList<>();
         for (Nearby<T> n : nearby.subList(0, Math.min(max, nearby.size()))) {
@@ -283,12 +307,12 @@ public final class SnapshotBuilder {
         return composition == null ? null : composition.getName();
     }
 
-    private static Snapshot.Point point(WorldPoint tile) {
+    static Snapshot.Point point(WorldPoint tile) {
         return new Snapshot.Point(tile.getX(), tile.getY(), tile.getPlane());
     }
 
     /** Something near the player, with its distance, for sorting. */
-    private static final class Nearby<T> {
+    static final class Nearby<T> {
         final int distance;
         final T value;
 

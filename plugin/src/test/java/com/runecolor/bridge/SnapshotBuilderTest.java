@@ -147,7 +147,7 @@ public class SnapshotBuilderTest {
 
         Snapshot snapshot = SnapshotBuilder.build(client, 1757193600123L);
 
-        assertEquals(1, snapshot.schema);
+        assertEquals(2, snapshot.schema);
         assertEquals(123456, snapshot.tick);
         assertEquals(1757193600123L, snapshot.sentAt);
         assertEquals("LOGGED_IN", snapshot.gameState);
@@ -159,6 +159,22 @@ public class SnapshotBuilderTest {
         assertEquals(3222, snapshot.worldPoint.x);
         assertEquals(3218, snapshot.worldPoint.y);
         assertEquals(0, snapshot.worldPoint.plane);
+    }
+
+    /**
+     * A field that fails to build must not cost the bot the rest of the snapshot:
+     * {@link MenuReader#read} throwing must leave {@code menu} null without
+     * disturbing any other field.
+     */
+    @Test
+    public void aFailingFieldIsLeftNullWithoutLosingTheRestOfTheSnapshot() {
+        Client client = loggedInClient();
+        Mockito.when(client.getMenuEntries()).thenThrow(new RuntimeException("boom"));
+
+        Snapshot snapshot = SnapshotBuilder.build(client, 0L, null, Collections.emptySet());
+
+        assertNull(snapshot.menu);
+        assertEquals(42, snapshot.hitpoints.current);
     }
 
     /**

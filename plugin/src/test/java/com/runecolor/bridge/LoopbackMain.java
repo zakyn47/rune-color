@@ -8,9 +8,10 @@ public final class LoopbackMain {
     public static void main(String[] args) throws Exception {
         SnapshotPublisher publisher =
                 new SnapshotPublisher(new OkHttpClient(), new Gson(), args[0]);
-        publisher.publish(new Snapshot(1, 123456, 1757193600123L, "LOGGED_IN",
+        publisher.publish(new Snapshot(2, 123456, 1757193600123L, "LOGGED_IN",
                 new Snapshot.Stat(42, 55), new Snapshot.Stat(12, 43), 87,
-                new Snapshot.Point(3222, 3218, 0), 879, false, null, null, null, null, null, null));
+                new Snapshot.Point(3222, 3218, 0), 879, false, null, null, null, null, null, null,
+                null, null, null));
         Thread.sleep(2000);
         publisher.close();
     }

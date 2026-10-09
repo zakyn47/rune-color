@@ -68,10 +68,21 @@ public final class Snapshot {
     /** NPCs near the player and on screen, nearest first, or null if unknown. */
     public final List<Npc> npcs;
 
+    /** The objects the bot asked for, nearest first, or null if unknown. */
+    public final List<SceneObject> objects;
+
+    /** Each inventory slot on screen as [x, y, w, h], or null while hidden. */
+    @SerializedName("inventory_slots")
+    public final List<int[]> inventorySlots;
+
+    /** The client menu, or null if unknown. */
+    public final Menu menu;
+
     Snapshot(int schema, int tick, long sentAt, String gameState, Stat hitpoints,
              Stat prayer, Integer runEnergy, Point worldPoint, Integer animation,
              Boolean idle, ScreenPoint fire, String profile, Target target,
-             List<GroundItem> groundItems, List<Integer> inventory, List<Npc> npcs) {
+             List<GroundItem> groundItems, List<Integer> inventory, List<Npc> npcs,
+             List<SceneObject> objects, List<int[]> inventorySlots, Menu menu) {
         this.schema = schema;
         this.tick = tick;
         this.sentAt = sentAt;
@@ -88,6 +99,9 @@ public final class Snapshot {
         this.groundItems = groundItems;
         this.inventory = inventory;
         this.npcs = npcs;
+        this.objects = objects;
+        this.inventorySlots = inventorySlots;
+        this.menu = menu;
     }
 
     /** A current and maximum pair, as the orbs show them. */
@@ -190,6 +204,47 @@ public final class Snapshot {
             this.x = x;
             this.y = y;
             this.busy = busy;
+        }
+    }
+
+    /** A game object the bot asked for, with its clickbox outline on screen. */
+    public static final class SceneObject {
+        public final int id;
+        public final Point tile;
+        public final int distance;
+        public final List<int[]> hull;
+
+        SceneObject(int id, Point tile, int distance, List<int[]> hull) {
+            this.id = id;
+            this.tile = tile;
+            this.distance = distance;
+            this.hull = hull;
+        }
+    }
+
+    /** One menu option. {@code rect} is null for {@code top}, the hover entry. */
+    public static final class MenuEntry {
+        public final String option;
+        public final String target;
+        public final int[] rect;
+
+        MenuEntry(String option, String target, int[] rect) {
+            this.option = option;
+            this.target = target;
+            this.rect = rect;
+        }
+    }
+
+    /** The client menu: what a left-click would do, and the rows of an open menu. */
+    public static final class Menu {
+        public final boolean open;
+        public final MenuEntry top;
+        public final List<MenuEntry> entries;
+
+        Menu(boolean open, MenuEntry top, List<MenuEntry> entries) {
+            this.open = open;
+            this.top = top;
+            this.entries = entries;
         }
     }
 }

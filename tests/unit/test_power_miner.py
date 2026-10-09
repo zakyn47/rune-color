@@ -2,6 +2,7 @@
 
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -33,9 +34,15 @@ class RulesTest(unittest.TestCase):
 
     def test_an_ore_needs_a_name_rock_word_and_item(self):
         with self.assertRaises(ValueError):
-            rules.Ore("Coal", -1, "Coal")
+            rules.Ore("Coal", -1, "Coal", frozenset({11366}))
         with self.assertRaises(ValueError):
-            rules.Ore("Coal", 453, "")
+            rules.Ore("Coal", 453, "", frozenset({11366}))
+        with self.assertRaises(ValueError):
+            rules.Ore("Coal", 453, "Coal", frozenset())
+
+    def test_each_ore_names_its_live_rocks(self):
+        self.assertEqual(rules.TIN.rock_ids, frozenset({11360, 11361}))
+        self.assertEqual(rules.IRON.rock_ids, frozenset({11364, 11365}))
 
     def test_unknown_inventory_has_no_ore_and_is_not_full(self):
         self.assertEqual(rules.ore_slots(None, rules.TIN), [])
@@ -57,6 +64,8 @@ class FakeBridge:
     def __init__(self, inventory, idle_for=0.0):
         self.inventory = list(inventory)
         self.idle_for = idle_for
+        self.objects = []
+        self.inventory_slots = None
 
 
 class FakeMouse:
@@ -77,6 +86,7 @@ class FakeMiner:
     drop_ore = OSRSPowerMiner.drop_ore
     _ore_count = OSRSPowerMiner._ore_count
     _wait_until = OSRSPowerMiner._wait_until
+    _pick_rock = OSRSPowerMiner._pick_rock
     ore_label = OSRSPowerMiner.ore_label
     game_tick = 0.003
 
@@ -88,32 +98,30 @@ class FakeMiner:
         self.says_tin = says_tin
         self.ore = ore
         self.mouseover_words = []
+        self.moved_to = []
         self.rocks = rocks
-        self.mark_color = None
-        self.win = SimpleNamespace(game_view=None)
         self.ores_mined = 0
         self.ores_dropped = 0
         self.gems_dropped = 0
         self.dropped_slots = []
+        self.drop_rects = None
+        bridge.objects = [
+            SimpleNamespace(id=11361, distance=d) for d in range(1, rocks + 1)
+        ]
 
-    def find_colors(self, rect, colors):
-        point = SimpleNamespace(x=0, y=0)
-        rock = SimpleNamespace(
-            random_point=lambda: point,
-            center=point,
-            rect=SimpleNamespace(center=point),
-        )
-        return [rock] * self.rocks
+    def move_to_scene_object(self, obj):
+        self.moved_to.append(obj)
 
-    def get_mouseover_text(self, contains=None, colors=None):
+    def wait_for_hover_text(self, contains, timeout=1.5):
         self.mouseover_words.append(contains)
         return self.says_tin
 
     def get_inv_drop_traversal_path(self):
         return list(range(28))
 
-    def drop_items(self, slots, verbose=True):
+    def drop_items(self, slots, verbose=True, rects=None):
         self.dropped_slots = list(slots)
+        self.drop_rects = rects
         for slot in slots:
             self.bridge.inventory[slot] = -1
 
@@ -155,15 +163,22 @@ class MineTest(unittest.TestCase):
         self.assertEqual(bot.mouseover_words, ["Iron"])
         self.assertEqual(bot.ores_mined, 1)
 
-    def test_no_marked_rock_means_no_click(self):
-        bot = FakeMiner(FakeBridge(EMPTY), rocks=0)
-        self.assertFalse(bot.mine())
-        self.assertEqual(bot.mouse.clicks, 0)
-
     def test_does_not_click_a_rock_that_is_not_tin(self):
         bot = FakeMiner(FakeBridge(EMPTY), says_tin=False)
         self.assertFalse(bot.mine())
         self.assertEqual(bot.mouse.clicks, 0)
+
+    def test_mines_the_nearest_rock_most_of_the_time(self):
+        miner = FakeMiner(FakeBridge(EMPTY), rocks=3)
+        with unittest.mock.patch("random.random", return_value=0.9):
+            self.assertEqual(miner._pick_rock().distance, 1)
+        with unittest.mock.patch("random.random", return_value=0.0):
+            self.assertEqual(miner._pick_rock().distance, 2)
+
+    def test_no_rock_in_view_means_nothing_to_mine(self):
+        miner = FakeMiner(FakeBridge(EMPTY), rocks=0)
+        self.assertFalse(miner.mine())
+        self.assertEqual(miner.mouse.clicks, 0)
 
 
 class DropTest(unittest.TestCase):
@@ -211,10 +226,7 @@ class ProfileTest(unittest.TestCase):
         markers = [
             line for line in lines if line.startswith("objectindicators.region_")
         ]
-        by_region = dict(line.split("=", 1) for line in markers)
-        self.assertEqual(len(markers), 2)
-        self.assertEqual(by_region["objectindicators.region_12849"].count("Tin"), 3)
-        self.assertEqual(by_region["objectindicators.region_13108"].count("Iron"), 2)
+        self.assertEqual(markers, [])
 
 
 if __name__ == "__main__":

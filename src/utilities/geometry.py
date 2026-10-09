@@ -1,5 +1,5 @@
 import math
-from typing import List, NamedTuple
+from typing import List, NamedTuple, Sequence, Tuple
 
 import cv2
 import mss
@@ -225,6 +225,46 @@ class Rectangle:
             str: The standard string representation of `Rectangle` objects.
         """
         return self.__str__()
+
+
+class Polygon:
+    """A screen-space outline, such as a scene object's clickbox from the bridge."""
+
+    def __init__(self, points: Sequence[Tuple[int, int]]) -> None:
+        if len(points) < 3:
+            raise ValueError(f"A polygon needs at least 3 points, got {len(points)}.")
+        self.points = [Point(int(x), int(y)) for x, y in points]
+        xs = [p.x for p in self.points]
+        ys = [p.y for p in self.points]
+        self.bounds = Rectangle(
+            min(xs), min(ys), max(xs) - min(xs) + 1, max(ys) - min(ys) + 1
+        )
+
+    def contains(self, point: Point) -> bool:
+        """Even-odd ray cast."""
+        inside = False
+        for a, b in zip(self.points, self.points[-1:] + self.points[:-1]):
+            if (a.y > point.y) != (b.y > point.y):
+                crossing = a.x + (point.y - a.y) * (b.x - a.x) / (b.y - a.y)
+                if point.x < crossing:
+                    inside = not inside
+        return inside
+
+    @property
+    def center(self) -> Point:
+        n = len(self.points)
+        return Point(
+            sum(p.x for p in self.points) // n, sum(p.y for p in self.points) // n
+        )
+
+    def random_point(self, tries: int = 30) -> Point:
+        # Sampling the bounds keeps Rectangle's centre bias; the vertex mean of a
+        # convex hull is always inside, so it is a safe last resort.
+        for _ in range(tries):
+            point = self.bounds.random_point()
+            if self.contains(point):
+                return point
+        return self.center
 
 
 class RuneLiteObject:

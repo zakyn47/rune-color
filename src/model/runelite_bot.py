@@ -23,7 +23,7 @@ from model.bot import Bot
 from model.runelite_window import RuneLiteWindow
 from model.window import Window
 from utilities import settings
-from utilities.api.bridge_api import BridgeAPI
+from utilities.api.bridge_api import BridgeAPI, SceneObject
 from utilities.color_util import Color, ColorPalette, isolate_colors, isolate_contours
 from utilities.extract_contours import extract_contours
 from utilities.geometry import Point, Rectangle, RuneLiteObject, cosine_similarity
@@ -97,6 +97,45 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
     def detach_bridge(self) -> None:
         """Stop preferring plug-in values, reverting every read to OCR."""
         self.bridge = None
+
+    def move_to_scene_object(self, obj: SceneObject) -> None:
+        """Move the mouse to a random point on a scene object the bridge reported.
+
+        Args:
+            obj (SceneObject): An entry of `self.bridge.objects`.
+        """
+        self.mouse.move_to(obj.hull.random_point())
+
+    def wait_for_hover_text(self, contains: str, timeout: float = 1.5) -> bool:
+        """Wait until the client's hover text names what is under the mouse.
+
+        A snapshot is up to a tick older than the mouse, so the first one after a
+        move can still describe whatever was under the cursor before. A menu only
+        counts once its snapshot's tick is newer than the one in hand when we
+        started waiting.
+
+        Args:
+            contains (str): Case-sensitive text the hover text must contain.
+            timeout (float, optional): Seconds to wait. Defaults to 1.5, about two
+                snapshots.
+
+        Returns:
+            bool: True once a snapshot taken after the wait began has hover text
+                containing it.
+        """
+        start_tick = self.bridge.tick
+        end_time = time.time() + timeout
+        while time.time() < end_time:
+            current_tick = self.bridge.tick
+            menu = self.bridge.menu
+            if (
+                current_tick > start_tick
+                and menu is not None
+                and contains in menu.top_text
+            ):
+                return True
+            time.sleep(self.game_tick / 3)
+        return False
 
     def _from_bridge(self, read_bridge, read_ocr, label: str, sentinel):
         """Return the plug-in's value if it is fresh, otherwise the OCR value.
@@ -1318,7 +1357,12 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
         traversals_full = traversals_base + traversals_reversed
         return random.choice(traversals_full)
 
-    def drop_items(self, slots: List[int], verbose: bool = True) -> None:
+    def drop_items(
+        self,
+        slots: List[int],
+        verbose: bool = True,
+        rects: Optional[List[Rectangle]] = None,
+    ) -> None:
         """Left-click one or more inventory slots to drop items.
 
         This function relies on the shift-click drop ingame settings being enabled.
@@ -1328,13 +1372,17 @@ class RuneLiteBot(Bot, metaclass=ABCMeta):
                 where items we wish to drop reside.
             verbose (bool, optional): Whether to print relevant log messages. Defaults
                 to True.
+            rects (Optional[List[Rectangle]], optional): Slot rectangles to click,
+                e.g. `self.bridge.inventory_slots`. Defaults to the ones measured from
+                the window.
         """
         if verbose:
             self.log_msg("Dropping items...")
+        rects = rects or self.win.inventory_slots
         pag.keyDown("shift", _pause=False)  # Hold shift to drop.
         for slot in slots:
             self.mouse.move_to(
-                self.win.inventory_slots[slot].random_point(),
+                rects[slot].random_point(),
                 mouseSpeed="fastest",
                 knotsCount=1,
                 offsetBoundaryY=40,

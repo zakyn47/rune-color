@@ -61,6 +61,7 @@ public class RuneColorBridgePlugin extends Plugin {
     private SnapshotPublisher publisher;
     private ExecutorService profileExecutor;
     private volatile ProfileStore profileStore;
+    private final ObjectRequest objectRequest = new ObjectRequest();
     private ScheduledExecutorService timer;
     private int cycle;
 
@@ -85,10 +86,14 @@ public class RuneColorBridgePlugin extends Plugin {
             return thread;
         });
         profileStore = new RuneLiteProfileStore(profileManager, configManager);
-        ProfileSwitcher switcher = new ProfileSwitcher(profileStore, profileExecutor, gson);
+        ProfileSwitcher switcher = new ProfileSwitcher(profileStore, profileExecutor);
         publisher = new SnapshotPublisher(http, gson,
                 "http://127.0.0.1:" + config.port() + "/api/snapshot/",
-                switcher::onReply);
+                body -> {
+                    BotReply reply = BotReply.parse(gson, body);
+                    switcher.onProfile(reply.profile);
+                    objectRequest.update(reply);
+                });
         cycle = 0;
 
         timer = Executors.newSingleThreadScheduledExecutor(runnable -> {
@@ -140,7 +145,8 @@ public class RuneColorBridgePlugin extends Plugin {
                     SnapshotPublisher current = publisher;
                     if (current != null) {
                         current.publish(SnapshotBuilder.build(
-                                client, System.currentTimeMillis(), activeProfileName()));
+                                client, System.currentTimeMillis(), activeProfileName(),
+                                objectRequest.ids()));
                     }
                 } catch (Exception e) {
                     log.warn("Skipped a snapshot: {}", e.toString());
