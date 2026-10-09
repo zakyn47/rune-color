@@ -98,7 +98,6 @@ class FakeFighter:
     _aim_at_gate = OSRSCowFighter._aim_at_gate
     _here = OSRSCowFighter._here
     _take_bones_from_menu = OSRSCowFighter._take_bones_from_menu
-    rest_if_hurt = OSRSCowFighter.rest_if_hurt
     game_tick = 0.003
 
     def __init__(self, bridge, on_click=lambda: None, says_take=True):
@@ -301,30 +300,6 @@ class PileTest(unittest.TestCase):
         self.assertEqual(bot.mouse.clicks, 1)
         self.assertTrue(129 <= bot.mouse.moves[-1].y < 144)
         self.assertEqual(bot.bones_taken, 0)
-
-
-class RestTest(unittest.TestCase):
-    def test_rests_until_hitpoints_recover(self):
-        bridge = FakeBridge()
-        bridge._hitpoints = [(5, 15), (5, 15), (7, 15), (10, 15)]
-        bot = FakeFighter(bridge)
-        bot.rest_if_hurt()
-        self.assertTrue(any("Resting" in m for m in bot.messages))
-        self.assertEqual(bridge._hitpoints, [(10, 15)])
-
-    def test_fights_on_while_healthy(self):
-        bot = FakeFighter(FakeBridge())
-        bot.bridge.hitpoints = (6, 15)
-        bot.rest_if_hurt()
-        self.assertEqual(bot.messages, [])
-
-    def test_rule(self):
-        self.assertTrue(rules.needs_rest((5, 15)))
-        self.assertFalse(rules.needs_rest((6, 15)))
-        self.assertFalse(rules.needs_rest((-1, -1)))
-        self.assertTrue(rules.rested((10, 15)))
-        self.assertTrue(rules.rested((7, 7)))
-        self.assertFalse(rules.rested((9, 15)))
 
 
 class AttackTest(unittest.TestCase):

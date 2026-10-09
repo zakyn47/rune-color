@@ -18,7 +18,6 @@ TAKE_TIMEOUT = 5  # Includes walking to the item.
 BURY_TIMEOUT = 3
 OPEN_TIMEOUT = 5  # Seconds for a clicked gate to swing open.
 MENU_TIMEOUT = 2  # Seconds for a right-click menu to show up in a snapshot.
-REST_TIMEOUT = 600  # Hitpoints regenerate about one a minute.
 GATE_AIM_TRIES = 4
 WALK_TIMEOUT = 60  # A walk this long is stuck, most likely at the closed gate.
 HOME_SQUARE = 4  # Tiles; arriving anywhere in this square around home will do.
@@ -32,8 +31,9 @@ class OSRSCowFighter(OSRSBot):
         bot_title = "Cow Fighter"
         description = (
             "Kill cows, take the bones they drop, and once the inventory is full bury"
-            " them and drop any cowhides. Repeat. Stays near where it starts, walking back (and opening the field's"
-            " west gate) if it drifts away. Hitpoints are not watched.\n\n"
+            " them and drop any cowhides. Repeat. Stays near where it starts, walking"
+            " back (and opening the field's west gate) if it drifts away. Hitpoints"
+            " are not watched: after a death it walks back from Lumbridge.\n\n"
             "Setup:\n"
             "- Stand in the cow field east of the River Lum, north of Lumbridge castle.\n"
             "- Empty inventory; wield a weapon if you have one.\n"
@@ -101,7 +101,6 @@ class OSRSCowFighter(OSRSBot):
                 self.potentially_take_a_break()
             self.loot()
             self.bury_when_full()
-            self.rest_if_hurt(start_time + end_time - time.time())
             self.fight()
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
@@ -332,16 +331,6 @@ class OSRSCowFighter(OSRSBot):
             if item is None:
                 return False
         return False
-
-    def rest_if_hurt(self, time_left: float = REST_TIMEOUT) -> None:
-        """Stop fighting while hitpoints are low, until they regenerate."""
-        hitpoints = self.bridge.hitpoints
-        if not rules.needs_rest(hitpoints):
-            return
-        self.log_msg(f"Hitpoints {hitpoints[0]}/{hitpoints[1]}. Resting...")
-        self._wait_until(
-            lambda: rules.rested(self.bridge.hitpoints), min(REST_TIMEOUT, time_left)
-        )
 
     def bury_when_full(self) -> None:
         """Once the inventory has no room left, bury the bones and drop the cowhides."""

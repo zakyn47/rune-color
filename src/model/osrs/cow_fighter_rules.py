@@ -1,6 +1,6 @@
 """What the Cow Fighter takes, buries and counts as a kill, kept free of I/O."""
 
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 from utilities.api.bridge_api import GroundItem, Npc, Target, Tile
 
@@ -12,10 +12,6 @@ LOOT_NAMES = ("Bones",)
 # The cow field's west gate, both halves while closed. Open, they change ID.
 GATE_CLOSED = frozenset({1558, 1560})
 GATE_REACH = 3  # Tiles; a gate further away is not the one blocking our walk.
-# Cows hit back and the bot carries no food; stop fighting at this many hitpoints
-# and wait for them to regenerate up to RESTED_HP (or full, if that is lower).
-LOW_HP = 5
-RESTED_HP = 10
 # Cows wander the whole field; further than this from home, we have left it.
 LEASH = 8
 # Drops land on the tile the cow died on; a little slack covers one that died
@@ -64,18 +60,6 @@ def bone_slots(inventory: Optional[List[int]]) -> List[int]:
 def cowhide_slots(inventory: Optional[List[int]]) -> List[int]:
     """Return the inventory slots holding Cowhides, lowest first."""
     return [slot for slot, item in enumerate(inventory or []) if item == COWHIDE]
-
-
-def needs_rest(hitpoints: Tuple[int, int]) -> bool:
-    """Whether hitpoints are low enough to stop fighting. Unknown never is."""
-    current, _ = hitpoints
-    return 0 <= current <= LOW_HP
-
-
-def rested(hitpoints: Tuple[int, int]) -> bool:
-    """Whether hitpoints have regenerated enough to fight again."""
-    current, maximum = hitpoints
-    return current >= min(RESTED_HP, maximum)
 
 
 def is_finished(target: Optional[Target]) -> bool:
