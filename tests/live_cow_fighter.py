@@ -1,11 +1,10 @@
-﻿"""Run the Cow Fighter against a live client and report what it did.
+"""Run the Cow Fighter against a live client and report what it did.
 
 This is a live test, not a unit test. It needs RuneLite running in developer mode
 with the RuneColor Bridge plug-in, and it moves the real mouse.
 
-The kill, bone and coin counts come from the bot, but the pass criteria are checked
-against the game: bones buried must match bones picked up, and the coins in the
-inventory (from the plug-in) must have grown if any were looted.
+The kill and bone counts come from the bot. Bones are only buried once the
+inventory is full, so a short run may take bones without burying any.
 
 Usage:
     python tests/live_cow_fighter.py [--minutes M] [--walk]
@@ -68,7 +67,6 @@ def main() -> None:
         bot.home = (COWS.x, COWS.y, 0)
     bot.set_status(BotStatus.STOPPED)
 
-    coins_before = coins_in(bot.bridge.inventory)
     bot.play()
     if bot.thread is None:
         raise RuntimeError(f"the bot did not start (status={bot.status})")
@@ -76,16 +74,9 @@ def main() -> None:
 
     print("\n" + "=" * 60 + "\nSUMMARY\n" + "=" * 60, flush=True)
     print(f"  kills         : {bot.kills}", flush=True)
+    print(f"  bones taken   : {bot.bones_taken}", flush=True)
     print(f"  bones buried  : {bot.bones_buried}", flush=True)
-    print(f"  coins looted  : {bot.coins_looted}", flush=True)
-    print(f"  coins before  : {coins_before}", flush=True)
-
-
-def coins_in(inventory) -> str:
-    """Say whether a coin stack is in the inventory; its size isn't reported."""
-    if inventory is None:
-        return "unknown"
-    return "present" if 995 in inventory else "none"
+    print(f"  inventory     : {bot.bridge.inventory}", flush=True)
 
 
 if __name__ == "__main__":

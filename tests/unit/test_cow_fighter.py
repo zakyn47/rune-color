@@ -61,6 +61,7 @@ class FakeFighter:
     loot = OSRSCowFighter.loot
     take = OSRSCowFighter.take
     bury = OSRSCowFighter.bury
+    bury_when_full = OSRSCowFighter.bury_when_full
     _wait_until = OSRSCowFighter._wait_until
     _slot_item = OSRSCowFighter._slot_item
     attack = OSRSCowFighter.attack
@@ -81,7 +82,7 @@ class FakeFighter:
         self.death_tile = None
         self.kills = 0
         self.bones_buried = 0
-        self.coins_looted = 0
+        self.bones_taken = 0
         self.messages = []
         self.hover_words = []
         self.home = (3256, 3272, 0)
@@ -143,48 +144,56 @@ class WaitForKillTest(unittest.TestCase):
 
 
 class LootTest(unittest.TestCase):
-    def coins(self):
-        return GroundItem(995, "Coins", 25, (10, 10, 0), (300, 200))
+    def bones(self, point=(300, 200)):
+        return GroundItem(rules.BONES, "Bones", 1, (10, 10, 0), point)
 
-    def test_takes_coins_near_the_kill_and_counts_them(self):
-        bridge = FakeBridge(ground_items=[self.coins()])
+    def test_takes_bones_near_the_kill_and_counts_them(self):
+        bridge = FakeBridge(ground_items=[self.bones()])
 
         def picked_up():
             bridge.ground_items = []
-            bridge.inventory = [995] + [-1] * 27
+            bridge.inventory = [rules.BONES] + [-1] * 27
 
         bot = FakeFighter(bridge, on_click=picked_up)
         bot.death_tile = (10, 10, 0)
         bot.loot()
-        self.assertEqual(bot.coins_looted, 25)
+        self.assertEqual(bot.bones_taken, 1)
         self.assertIsNone(bot.death_tile)
         self.assertEqual(bot.hover_words, ["Take"])
 
+    def test_leaves_cowhides_and_coins_on_the_ground(self):
+        items = [
+            GroundItem(1739, "Cowhide", 1, (10, 10, 0), (300, 200)),
+            GroundItem(995, "Coins", 25, (10, 10, 0), (300, 200)),
+        ]
+        bot = FakeFighter(FakeBridge(ground_items=items))
+        bot.death_tile = (10, 10, 0)
+        bot.loot()
+        self.assertEqual(bot.mouse.moves, [])
+
     def test_aims_again_where_the_item_now_is_before_giving_up(self):
-        bridge = FakeBridge(ground_items=[self.coins()])
+        bridge = FakeBridge(ground_items=[self.bones()])
         bot = FakeFighter(bridge, says_take=False)
         answers = iter([False, True])
         bot.wait_for_hover_text = lambda contains, timeout=1.5: next(answers)
 
         def moved_on_screen():
             bridge.ground_items = []
-            bridge.inventory = [995] + [-1] * 27
+            bridge.inventory = [rules.BONES] + [-1] * 27
 
         bot.mouse.on_click = moved_on_screen
-        bridge.ground_items = [
-            GroundItem(995, "Coins", 25, (10, 10, 0), (310, 210)),
-        ]
+        bridge.ground_items = [self.bones(point=(310, 210))]
         bot.death_tile = (10, 10, 0)
         bot.loot()
         self.assertEqual(bot.mouse.moves, [(310, 210), (310, 210)])
-        self.assertEqual(bot.coins_looted, 25)
+        self.assertEqual(bot.bones_taken, 1)
 
     def test_does_not_click_when_the_cursor_does_not_read_take(self):
-        bot = FakeFighter(FakeBridge(ground_items=[self.coins()]), says_take=False)
+        bot = FakeFighter(FakeBridge(ground_items=[self.bones()]), says_take=False)
         bot.death_tile = (10, 10, 0)
         bot.loot()
         self.assertEqual(bot.mouse.clicks, 0)
-        self.assertEqual(bot.coins_looted, 0)
+        self.assertEqual(bot.bones_taken, 0)
 
 
 class AttackTest(unittest.TestCase):
@@ -248,6 +257,23 @@ class BuryTest(unittest.TestCase):
         bot = FakeFighter(bridge, on_click=buried)
         bot.bury()
         self.assertEqual(bot.mouse.moves, [("bridge", 1)])
+
+
+class BuryWhenFullTest(unittest.TestCase):
+    def test_keeps_bones_while_there_is_room(self):
+        bot = FakeFighter(FakeBridge(inventory=[526, 526] + [-1] * 26))
+        bot.bury_when_full()
+        self.assertEqual(bot.mouse.clicks, 0)
+
+    def test_buries_every_bone_once_the_inventory_is_full(self):
+        bridge = FakeBridge(inventory=[1351] + [526] * 27)
+
+        def buried():
+            bridge.inventory[bridge.inventory.index(526)] = -1
+
+        bot = FakeFighter(bridge, on_click=buried)
+        bot.bury_when_full()
+        self.assertEqual(bot.bones_buried, 27)
 
 
 class StartTest(unittest.TestCase):

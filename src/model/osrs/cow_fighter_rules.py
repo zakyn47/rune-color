@@ -5,9 +5,9 @@ from typing import List, Optional
 from utilities.api.bridge_api import GroundItem, Npc, Target, Tile
 
 BONES = 526
-COINS = 995
+EMPTY = -1
 TARGET_NAME = "Cow"
-LOOT_NAMES = ("Bones", "Coins")
+LOOT_NAMES = ("Bones",)
 # The cow field's west gate, both halves while closed. Open, they change ID.
 GATE_CLOSED = frozenset({1558, 1560})
 GATE_REACH = 3  # Tiles; a gate further away is not the one blocking our walk.
@@ -21,7 +21,7 @@ LOOT_RADIUS = 2
 def loot_to_take(
     items: List[GroundItem], death_tile: Optional[Tile]
 ) -> List[GroundItem]:
-    """Return the Bones and Coins lying near where our last target died.
+    """Return the Bones lying near where our last target died.
 
     Args:
         items (List[GroundItem]): The items the plug-in sees near the player.
@@ -37,6 +37,11 @@ def loot_to_take(
         for item in items
         if item.name in LOOT_NAMES and _near(item.tile, death_tile)
     ]
+
+
+def is_full(inventory: Optional[List[int]]) -> bool:
+    """Whether every slot holds something. Unknown reads as not full."""
+    return bool(inventory) and EMPTY not in inventory
 
 
 def bone_slots(inventory: Optional[List[int]]) -> List[int]:

@@ -28,8 +28,8 @@ class OSRSCowFighter(OSRSBot):
     def __init__(self) -> None:
         bot_title = "Cow Fighter"
         description = (
-            "Kill cows, take the bones (and any coins) they drop, bury the bones, and"
-            " repeat. Stays near where it starts, walking back (and opening the field's"
+            "Kill cows, take the bones they drop, bury them once the inventory is"
+            " full, and repeat. Stays near where it starts, walking back (and opening the field's"
             " west gate) if it drifts away. Hitpoints are not watched.\n\n"
             "Setup:\n"
             "- Stand in the cow field east of the River Lum, north of Lumbridge castle.\n"
@@ -46,7 +46,7 @@ class OSRSCowFighter(OSRSBot):
         self.home: Optional[Tile] = None
         self.kills = 0
         self.bones_buried = 0
-        self.coins_looted = 0
+        self.bones_taken = 0
 
     def create_options(self) -> None:
         """Add bot options. See `utilities.options_builder` for more."""
@@ -96,14 +96,14 @@ class OSRSCowFighter(OSRSBot):
             if self.take_breaks:
                 self.potentially_take_a_break()
             self.loot()
-            self.bury()
+            self.bury_when_full()
             self.fight()
             self.update_progress((time.time() - start_time) / end_time)
             self.logout_if_greater_than(dt=self.relog_time, start=start_time)
         self.update_progress(1)
         self.log_msg(
-            f"Killed {self.kills} cows, buried {self.bones_buried} bones, looted"
-            f" {self.coins_looted} coins."
+            f"Killed {self.kills} cows, took {self.bones_taken} bones and buried"
+            f" {self.bones_buried}."
         )
         self.logout_and_stop_script("[END]")
 
@@ -227,7 +227,7 @@ class OSRSCowFighter(OSRSBot):
             time.sleep(self.game_tick / 3)
 
     def loot(self) -> None:
-        """Take the bones and coins our last kill dropped."""
+        """Take the bones our last kill dropped."""
         if self.death_tile is None:
             return
         self._wait_until(
@@ -260,8 +260,7 @@ class OSRSCowFighter(OSRSBot):
         self.mouse.click()
         if not self._wait_until(lambda: self.bridge.inventory != before, TAKE_TIMEOUT):
             return False
-        if item.id == rules.COINS:
-            self.coins_looted += item.quantity
+        self.bones_taken += 1
         return True
 
     def _aim_at_item(self, item: GroundItem) -> bool:
@@ -285,6 +284,11 @@ class OSRSCowFighter(OSRSBot):
             if item is None:
                 return False
         return False
+
+    def bury_when_full(self) -> None:
+        """Bury the bones we carry, but only once the inventory has no room left."""
+        if rules.is_full(self.bridge.inventory):
+            self.bury()
 
     def bury(self) -> None:
         """Bury every bone in the inventory."""
